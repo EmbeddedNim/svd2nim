@@ -1,4 +1,12 @@
-import os, streams, strutils, xmlparser, xmltree, re, tables, strtabs, algorithm, sequtils
+import strutils
+import xmlparser
+import xmltree
+import re
+import tables
+import strtabs
+import algorithm
+import sequtils
+
 ###############################################################################
 # Models
 ###############################################################################
@@ -81,18 +89,18 @@ proc formatText(text: string): string =
   ftext = ftext.strip()
   return ftext
 
-proc addInterrupt(interrupts: var Table[string, svdInterrupt], intrName: string, intrIndex: int, description: string) = 
+proc addInterrupt(interrupts: var Table[string, svdInterrupt], intrName: string, intrIndex: int, description: string) =
   if interrupts.hasKey(intrName):
     if interrupts[intrName].index != intrIndex:
       raise newException(ValueError, "Interrupt with the same name has different indexes: $# ($¤ vs $#)" % [intrName, interrupts[intrName].index.intToStr(), intrIndex.intToStr()])
     if not (description in interrupts[intrName].description.split(" # ")):
       interrupts[intrName].description &= " # " & description
   else:
-    interrupts.add(intrName,svdInterrupt(
+    interrupts[intrName] = svdInterrupt(
       name: intrName,
       index: intrIndex,
       description: description
-    ))
+    )
 
 proc parseBitfields(groupName: string, regName: string, fieldsNodes: seq[XmlNode], bitFieldPrefix: string): seq[svdField] =
   var fields: seq[svdField]
@@ -161,7 +169,7 @@ proc parseRegister(groupName: string, regNode: XmlNode, baseAddress: int, bitFie
   var nodeSizes = regNode.findAll("size")
   if nodeSizes.len() > 0:
     size = nodeSizes[0].getText().parseHexInt() # 8
-  
+
   var dimNodes = regNode.findAll("dim")
   var fieldsNodes = regNode.findAll("fields")
 
@@ -207,13 +215,13 @@ proc updatePeripheralType(peripherals: seq[svdPeripheral]): seq[svdPeripheral] =
   # Initial peripheralType == groupName
   var sortedPeripherals = peripherals
   sortedPeripherals.sort(proc (x,y: svdPeripheral): int = cmp(x.name, y.name))
-  
+
   for peripheral in sortedPeripherals:
     if peripheral.derivedFrom != "":
       continue
     var groupPeriphs = sortedPeripherals
     groupPeriphs.keepItIf(it.groupName == peripheral.groupName)
-    
+
     if groupPeriphs.len() > 1:
       for grpPeriph in groupPeriphs:
         for i in 0..grpPeriph.registers.len()-1:
@@ -224,10 +232,10 @@ proc updatePeripheralType(peripherals: seq[svdPeripheral]): seq[svdPeripheral] =
             break
           else:
             peripheral.typeName = peripheral.groupName
-    
+
     if peripheral.typeName == "":
       peripheral.typeName = peripheral.groupName
-  
+
   for dperiph in sortedPeripherals:
     if dperiph.derivedFrom == "":
       continue
@@ -253,7 +261,7 @@ proc readSVD*(path: string, sourceUrl: string): svdDevice =
     licenseText = licenseTexts[0].getText().formatText()
   else:
     raise newException(ValueError, "multiple <licenseText> elements")
-  
+
   device.peripherals = @[]
   var peripheralDict = initTable[string, svdPeripheral]()
   var groups = initTable[string, svdPeripheral]()
@@ -288,7 +296,7 @@ proc readSVD*(path: string, sourceUrl: string): svdDevice =
         derivedFrom = peripheralDict[derivedFromName]
       else:
         derivedFrom = groups[groupName]
-      
+
       peripheral = svdPeripheral(
         name: name,
         groupName: derivedFrom.groupName,
@@ -297,7 +305,7 @@ proc readSVD*(path: string, sourceUrl: string): svdDevice =
         derivedFrom: periphNode.attrs()["derivedFrom"]
       )
       device.peripherals.add(peripheral)
-      peripheralDict.add(name, peripheral)
+      peripheralDict[name] = peripheral
 
       if derivedFrom.subtypes.len() > 0:
         for subtype in derivedFrom.subtypes:
@@ -309,20 +317,20 @@ proc readSVD*(path: string, sourceUrl: string): svdDevice =
           )
           device.peripherals.add(subp)
       continue
-    
+
     peripheral = svdPeripheral(
       name: name,
       groupName: if groupName != "": groupName else: name,
       description: description,
       baseAddress: uint32(baseAddress)
     )
-    
+
     device.peripherals.add(peripheral)
-    peripheralDict.add(name, peripheral)
-    
+    peripheralDict[name] = peripheral
+
     if not (groupName in groups) and (groupName != ""):
-      groups.add(groupName, peripheral)
-    
+      groups[groupName] = peripheral
+
     var regsNodes = periphNode.findAll("registers")
 
     if regsNodes.len() > 0:
@@ -379,9 +387,9 @@ proc readSVD*(path: string, sourceUrl: string): svdDevice =
           dim: dim,
           elementSize: dimIncrement
         ))
-    peripheral.registers.sort(proc (x,y: svdRegister): int = 
+    peripheral.registers.sort(proc (x,y: svdRegister): int =
       result = cmp(x.address, y.address))
-  
+
   device.peripherals = updatePeripheralType(device.peripherals)
 
   device.peripherals.sort(proc (x,y: svdPeripheral): int =
@@ -389,7 +397,7 @@ proc readSVD*(path: string, sourceUrl: string): svdDevice =
 
   for key in interrupts.keys:
     device.interrupts.add(interrupts[key])
-  device.interrupts.sort(proc (x,y: svdInterrupt): int = 
+  device.interrupts.sort(proc (x,y: svdInterrupt): int =
     result = cmp(x.index, y.index))
 
   var licenseBlock = ""

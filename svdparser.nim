@@ -101,6 +101,12 @@ proc addInterrupt(interrupts: var Table[string, svdInterrupt], intrName: string,
       description: description
     )
 
+func parseHexOrDecInt(s: string) : int =
+  if s.toLower().startsWith("0x"):
+    result = fromHex[int](s)
+  else:
+    result = parseInt(s)
+
 proc parseBitfields(groupName: string, regName: string, fieldsNodes: seq[XmlNode], bitFieldPrefix: string): seq[svdField] =
   var fields: seq[svdField]
   if fieldsNodes.len() > 0:
@@ -108,17 +114,19 @@ proc parseBitfields(groupName: string, regName: string, fieldsNodes: seq[XmlNode
       for fieldNode in fieldsNode.findAll("field"):
         var fieldName = fieldNode.child("name").getText().replace("__","_")
         var lsbTags = fieldNode.findAll("lsb")
-        var lsb: int
-        if lsbTags.len() == 1:
-          lsb = lsbTags[0].getText.parseInt()
-        else: # stm32 pos
-          lsb = fieldNode.child("bitOffset").getText().parseInt()
+        let lsb : int =
+          if lsbTags.len() == 1:
+            lsbTags[0].getText.parseHexOrDecInt()
+          else: # stm32 pos
+            fieldNode.child("bitOffset").getText().parseHexOrDecInt()
+
         var msbTags = fieldNode.findAll("msb")
-        var msb: int
-        if msbTags.len() == 1:
-          msb = msbTags[0].getText().parseInt()
-        else: # stm32 msk
-          msb = fieldNode.child("bitWidth").getText().parseInt()
+        let msb: int =
+          if msbTags.len() == 1:
+            msbTags[0].getText().parseHexOrDecInt()
+          else: # stm32 msk
+            fieldNode.child("bitWidth").getText().parseHexOrDecInt()
+
         # bitOffset == Pos
         # bitWidth == Msk
         fields.add(
@@ -146,7 +154,7 @@ proc parseBitfields(groupName: string, regName: string, fieldsNodes: seq[XmlNode
         for enumNode in fieldNode.findAll("enumeratedValue"):
           var enumName = enumNode.child("name").getText()
           var enumDescription = enumNode.child("description").getText()
-          var enumValue = enumNode.child("value").getText().parseInt()
+          var enumValue = enumNode.child("value").getText().parseHexOrDecInt()
           fields.add(
             svdField(
               name: "$#_$#$#_$#_$#" % [groupName, bitFieldPrefix, regName, fieldName, enumName],
@@ -162,20 +170,20 @@ proc parseRegister(groupName: string, regNode: XmlNode, baseAddress: int, bitFie
   var offsetNodes = regNode.findAll("offset")
   if offsetNodes.len() == 0:
     offsetNodes = regNode.findAll("addressOffset")
-  var address = baseAddress + offsetNodes[0].getText().parseHexInt()
+  var address = baseAddress + offsetNodes[0].getText().parseHexOrDecInt()
 
   var size = 4
   var nodeSizes = regNode.findAll("size")
   if nodeSizes.len() > 0:
-    size = nodeSizes[0].getText().parseHexInt() # 8
+    size = nodeSizes[0].getText().parseHexOrDecInt()
 
   var dimNodes = regNode.findAll("dim")
   var fieldsNodes = regNode.findAll("fields")
 
   var dim: int
   if dimNodes.len() > 0:
-    dim = dimNodes[0].getText().parseInt()
-    var dimIncrement = regNode.child("dimIncrement").getText().parseHexInt()
+    dim = dimNodes[0].getText().parseHexOrDecInt()
+    var dimIncrement = regNode.child("dimIncrement").getText().parseHexOrDecInt()
     if "[%s]" in regName:
       # just a normal array of registers
       regName = regName.replace("[%s]", "")
@@ -276,7 +284,7 @@ proc readSVD*(path: string): svdDevice =
     var description = ""
     if descriptionTags.len() > 0:
       description = descriptionTags[0].getText().formatText()
-    var baseAddress = periphNode.child("baseAddress").getText().parseHexInt()
+    var baseAddress = periphNode.child("baseAddress").getText().parseHexOrDecInt()
     var groupNameTags = periphNode.findAll("groupName")
     var groupName = ""
     if groupNameTags.len() > 0:
@@ -285,7 +293,7 @@ proc readSVD*(path: string): svdDevice =
     var interruptsNodes = periphNode.findAll("interrupt")
     for interrupt in interruptsNodes:
       var intrName =interrupt.child("name").getText()
-      var intrIndex = interrupt.child("value").getText().parseInt()
+      var intrIndex = interrupt.child("value").getText().parseHexOrDecInt()
       addInterrupt(interrupts, intrName, intrIndex, description)
 
     if (not periphNode.attrs().isNil() and periphNode.attrs().hasKey("derivedFrom")):# or (groupName in groups):
@@ -342,7 +350,7 @@ proc readSVD*(path: string): svdDevice =
         var clusterName = cluster.child("name").getText().replace("[%s]","")
         var clusterDescription = cluster.child("description").getText()
         var clusterPrefix = clusterName & "_"
-        var clusterOffset = cluster.child("addressOffset").getText().parseHexInt()
+        var clusterOffset = cluster.child("addressOffset").getText().parseHexOrDecInt()
         var dim: int
         var dimIncrement: int
         if cluster.child("dim").isNil():
@@ -365,8 +373,8 @@ proc readSVD*(path: string): svdDevice =
             continue
 
         else:
-          dim = cluster.child("dim").getText().parseInt()
-          dimIncrement = cluster.child("dimIncrement").getText().parseHexInt()
+          dim = cluster.child("dim").getText().parseHexOrDecInt()
+          dimIncrement = cluster.child("dimIncrement").getText().parseHexOrDecInt()
         var clusterRegisters: seq[svdRegister] = @[]
         for regNode in cluster.findAll("register"):
           clusterRegisters.add(parseRegister((if groupName != "": groupName else: name), regNode, baseAddress + clusterOffset, clusterPrefix))
@@ -417,7 +425,7 @@ proc readSVD*(path: string): svdDevice =
     endian: cpuNode.child("endian").getText(),
     mpuPresent: int(cpuNode.child("mpuPresent").getText().parseBool()),
     fpuPresent: int(cpuNode.child("fpuPresent").getText().parseBool()),
-    nvicPrioBits: cpuNode.child("nvicPrioBits").getText().parseInt(),
+    nvicPrioBits: cpuNode.child("nvicPrioBits").getText().parseHexOrDecInt(),
     vendorSystickConfig: int(cpuNode.child("vendorSystickConfig").getText().parseBool())
   )
   return device

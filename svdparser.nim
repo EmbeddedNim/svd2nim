@@ -45,7 +45,6 @@ type
 type
   svdDeviceMetadata* = ref object of RootObj
     file*: string
-    descriptorSource*: string
     name*: string
     nameLower*: string
     description*: string
@@ -247,7 +246,7 @@ proc updatePeripheralType(peripherals: seq[svdPeripheral]): seq[svdPeripheral] =
 ###############################################################################
 # Public Procedures
 ###############################################################################
-proc readSVD*(path: string, sourceUrl: string): svdDevice =
+proc readSVD*(path: string): svdDevice =
   echo("Parsing SVD file: $#" % path)
   var device = svdDevice.new()
   var xml = path.loadXml()
@@ -406,7 +405,6 @@ proc readSVD*(path: string, sourceUrl: string): svdDevice =
     licenseBlock = "\n" & licenseBlock
   device.metadata = svdDeviceMetadata(
     file: path,
-    descriptorSource: sourceUrl,
     name: deviceName,
     nameLower: deviceName.toLower(),
     description: deviceDescription,

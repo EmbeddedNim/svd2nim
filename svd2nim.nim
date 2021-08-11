@@ -62,10 +62,6 @@ func sanitizeAllNames*(dev: svdDevice): svdDevice =
   for ipt in result.interrupts:
     ipt.name = ipt.name.sanitizeIdent
 
-  # Special case for eg "CM0+"
-  result.cpu.name = result.cpu.name.replace(re"(M\d+)\+", "$1plus")
-  result.cpu.name = result.cpu.name.sanitizeIdent
-
 proc renderHeader(text: string, outf: File) =
   outf.write("\n")
   outf.write(repeat("#",80))
@@ -97,7 +93,7 @@ proc renderCortexMExceptionNumbers(cpu: svdCpu, outf: File) =
   ]
   # Render
   renderHeader("# Interrupt Number Definition", outf)
-  outf.write("const\n")
+  outf.write("type IRQn* = enum\n")
   var hdr = "# #### Cortex-M Processor Exception Numbers "
   outf.write(hdr & repeat("#", 80-len(hdr)) & "\n")
   for excep in exceptions:
@@ -110,7 +106,7 @@ proc renderCortexMExceptionNumbers(cpu: svdCpu, outf: File) =
     if excep.value == 0:
       hdr = "# #### Device specific Interrupt numbers "
       outf.write(hdr & repeat("#", 80-len(hdr)) & "\n")
-    var itername = "  $#_IRQn* = $#" % [excep.name, excep.value.intToStr()]
+    var itername = "  $#_IRQn = $#," % [excep.name, excep.value.intToStr()]
     outf.write(itername)
     outf.write(repeat(" ", 40-len(itername)))
     outf.write("# $#\n" % excep.description)
@@ -123,12 +119,10 @@ proc renderInterrupt(interrupts: seq[svdInterrupt], outf: File) =
       maxIrq = iter.index
     if iter.index <= 1:
       continue
-    var itername = format("  $#_IRQn* = $# " % [iter.name.toUpper, iter.index.intToStr()])
+    var itername = format("  $#_IRQn = $#, " % [iter.name.toUpper, iter.index.intToStr()])
     outf.write(itername)
     outf.write(repeat(" ", 40-len(itername)))
     outf.write("# $#\n" % iter.description)
-  outf.write("  MAX_IRQn* = $#\n\n" % maxIrq.intToStr())
-
 
 proc renderRegisterBitfields(register: svdRegister, name: string, outf: File) =
   var sortedBitfields = register.bitfields
@@ -252,16 +246,16 @@ proc renderTemplates(outf: File) =
 """)
   outf.write("\n")
   outf.write("""template enableIRQ*(irq: IRQn) =
-NVIC.ISER[cast[int](irq) shr 5].st 1 shl (cast[int](irq) and 0x1F)
+  NVIC.ISER[cast[int](irq) shr 5].st 1 shl (cast[int](irq) and 0x1F)
 """)
   outf.write("\n")
   outf.write("""template disableIRQ*(irq: IRQn) =
-NVIC.ISCR[cast[int](irq) shr 5].st 1 shl (cast[int](irq) and 0x1F)
+  NVIC.ISCR[cast[int](irq) shr 5].st 1 shl (cast[int](irq) and 0x1F)
 """)
   outf.write("\n")
   outf.write("""template setPriority*[T: SomeInteger](irq: IRQn, pri: T) =
-if cast[int](irq) >= 0: # TODO: implement for IRQn < 0
-  NVIC.IP[cast[uint](irq)].st (cast[int](pri) shl 4) and 0xFF
+  if cast[int](irq) >= 0: # TODO: implement for IRQn < 0
+    NVIC.IP[cast[uint](irq)].st (cast[int](pri) shl 4) and 0xFF
 """)
 
 
@@ -276,7 +270,8 @@ proc renderDevice(d: svdDevice, outf: File) =
     outf.write("# Some information about this device.\n")
     outf.write("const DEVICE* = \"$#\"\n" % d.metadata.name)
   # CPU
-    outf.write("const $#_REV* = 0x0001\n" % d.cpu.name)
+    let cpuNameSan = d.cpu.name.replace(re"(M\d+)\+", "$1plus")
+    outf.write("const $#_REV* = 0x0001\n" % cpuNameSan)
     outf.write("const MPU_PRESENT* = $#\n" % d.cpu.mpuPresent.intToStr())
     outf.write("const FPU_PRESENT* = $#\n" % d.cpu.fpuPresent.intToStr())
     outf.write("const NVIC_PRIO_BITS* = $#\n" % d.cpu.nvicPrioBits.intToStr())

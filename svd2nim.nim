@@ -8,7 +8,10 @@ import httpclient, htmlparser, xmltree
 import tables
 import docopt
 import zip/zipfiles
+import json
+
 import svdparser
+import svdjson
 
 ###############################################################################
 # Register generation from SVD
@@ -365,7 +368,7 @@ proc main() =
   svd2nim - A SVD to Register memory maps generator for STM32.
 
   Usage:
-    svd2nim <svdFile>
+    svd2nim [--json] <svdFile>
     svd2nim [-u | --update]
     svd2nim [-p | --updatePatched]
     svd2nim (-h | --help)
@@ -376,6 +379,7 @@ proc main() =
     -p --updatePatched  # Get the latest version of the SVD files from https://stm32.agg.io/rs/
     -h --help           # Show this screen.
     -v --version        # Show version.
+    --json              # Dump json output of parsed SVD (useful for debugging)
   """
 
   let args = docopt(help, version = "0.1.0")
@@ -395,6 +399,11 @@ proc main() =
 
     outf = open(dev.metadata.name.toLower() & ".s", fmwrite)
     renderStartup(dev, outf)
+
+    if args.contains("--json"):
+      outf = open(dev.metadata.name.toLower() & ".json", fmWrite)
+      outf.write(dev.toJson.pretty(2))
+      outf.close
 
   else:
     echo "Try: svd2nim -h"

@@ -200,13 +200,14 @@ proc renderPeripheralObjects(peripherals: seq[svdPeripheral], fpu: bool, outf: F
         else:
           distinctRegs.add(reg)
 
-    outf.write("const\n")
-    for register in distinctRegs:
-      if register.bitfields.len() > 0:
-        renderRegisterBitfields(register, register.name, outf)
-      for subregister in register.registers:
-        renderRegisterBitfields(subregister, register.name & "." & subregister.name, outf)
-    outf.write("\n")
+    if distinctRegs.len > 0:
+      outf.write("const\n")
+      for register in distinctRegs:
+        if register.bitfields.len() > 0:
+          renderRegisterBitfields(register, register.name, outf)
+        for subregister in register.registers:
+          renderRegisterBitfields(subregister, register.name & "." & subregister.name, outf)
+      outf.write("\n")
 
 proc renderTemplates(outf: File) =
   renderHeader("# Templates", outf)

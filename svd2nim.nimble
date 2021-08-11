@@ -4,6 +4,7 @@ author      = "The svd2nim contributors"
 description = "Convert CMSIS ARM SVD files to nim register memory mappings"
 license     = "MIT"
 bin         = @["svd2nim"]
+binDir      = "build/"
 
 # Deps
 

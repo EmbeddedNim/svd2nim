@@ -8,6 +8,7 @@ import httpclient, htmlparser, xmltree
 import tables
 import docopt
 import zip/zipfiles
+import regex
 import json
 
 import svdparser
@@ -16,6 +17,55 @@ import svdjson
 ###############################################################################
 # Register generation from SVD
 ###############################################################################
+func sanitizeIdent*(ident: string): string =
+  # Sanitize identifier so that it conforms to nim's rules
+  # Exported (*) for testing purposes
+  const reptab: array[4, (Regex, string)] = [
+    (re"[!$%&*+-./:<=>?@\\^|~]", ""),         # Operators
+    (re"[\[\]\(\)`\{\},;\.:]", ""),           # Other tokens
+    (re"_(_)+", "_"),                         # Subsequent underscores
+    (re"_$", ""),                             # Trailing underscore
+  ]
+
+  result = ident
+  for (reg, repl) in reptab:
+    result = result.replace(reg, repl)
+
+proc sanitizeRegister(reg: var svdRegister) =
+  # Recursively sanitize register
+  reg.name = reg.name.sanitizeIdent
+  for sreg in reg.registers.mitems:
+    sanitizeRegister(sreg)
+
+  for f in reg.bitfields.mitems:
+    f.name = f.name.sanitizeIdent
+
+proc sanitizePeriph(periph: var svdPeripheral) =
+  # Recursively sanitize peripheral
+  periph.name = periph.name.sanitizeIdent
+  periph.typeName = periph.name.sanitizeIdent
+  periph.groupName = periph.name.sanitizeIdent
+  periph.clusterName = periph.name.sanitizeIdent
+
+  for reg in periph.registers.mitems:
+    reg.sanitizeRegister
+
+  for speriph in periph.subtypes.mitems:
+    speriph.sanitizePeriph
+
+func sanitizeAllNames*(dev: svdDevice): svdDevice =
+  deepCopy(result, dev)
+
+  for periph in result.peripherals.mitems:
+    periph.sanitizePeriph
+
+  for ipt in result.interrupts:
+    ipt.name = ipt.name.sanitizeIdent
+
+  # Special case for eg "CM0+"
+  result.cpu.name = result.cpu.name.replace(re"(M\d+)\+", "$1plus")
+  result.cpu.name = result.cpu.name.sanitizeIdent
+
 proc renderHeader(text: string, outf: File) =
   outf.write("\n")
   outf.write(repeat("#",80))
@@ -58,7 +108,7 @@ proc renderCortexMExceptionNumbers(cpu: svdCpu, outf: File) =
       if excep.value in [-9]:
         continue
     if excep.value == 0:
-      hdr = "# #### STM32 specific Interrupt numbers "
+      hdr = "# #### Device specific Interrupt numbers "
       outf.write(hdr & repeat("#", 80-len(hdr)) & "\n")
     var itername = "  $#_IRQn* = $#" % [excep.name, excep.value.intToStr()]
     outf.write(itername)
@@ -73,7 +123,7 @@ proc renderInterrupt(interrupts: seq[svdInterrupt], outf: File) =
       maxIrq = iter.index
     if iter.index <= 1:
       continue
-    var itername = format("  $#_IRQn* = $# " % [iter.name.toUpper(), iter.index.intToStr()])
+    var itername = format("  $#_IRQn* = $# " % [iter.name.toUpper, iter.index.intToStr()])
     outf.write(itername)
     outf.write(repeat(" ", 40-len(itername)))
     outf.write("# $#\n" % iter.description)
@@ -383,7 +433,6 @@ proc main() =
   """
 
   let args = docopt(help, version = "0.1.0")
-  echo args
   # Get Parameters
   if args.contains("-u") or args.contains("--update"):
     if args["--update"]:
@@ -395,7 +444,7 @@ proc main() =
     let dev = readSVD($args["<svdFile>"])
 
     var outf = open(dev.metadata.name.toLower() & ".nim",fmWrite)
-    renderDevice(dev, outf)
+    renderDevice(dev.sanitizeAllNames, outf)
 
     outf = open(dev.metadata.name.toLower() & ".s", fmwrite)
     renderStartup(dev, outf)

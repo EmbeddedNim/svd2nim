@@ -63,6 +63,11 @@ type SvdCluster* {.acyclic.} = ref object
   registers*: seq[SvdRegister]
   clusters*: seq[SvdCluster]
 
+type SvdInterrupt* = object
+  name*: string
+  description*: Option[string]
+  value*: int
+
 type SvdPeripheral* = ref object
   # https://arm-software.github.io/CMSIS_5/SVD/html/elem_peripherals.html#elem_peripheral
   name*: string
@@ -74,6 +79,7 @@ type SvdPeripheral* = ref object
   headerStructName*: Option[string]
   registers*: seq[SvdRegister]
   clusters*: seq[SvdCluster]
+  interrupts*: seq[SvdInterrupt]
 
 type
   SvdDeviceMetadata* = ref object
@@ -82,12 +88,6 @@ type
     nameLower*: string
     description*: string
     licenseBlock*: string
-
-type
-  SvdInterrupt* = ref object
-    name*: string
-    index*: int
-    description*: string
 
 type
   SvdCpu* = ref object
@@ -102,7 +102,6 @@ type
 type
   SvdDevice* = ref object
     peripherals*: seq[SvdPeripheral]
-    interrupts*: seq[SvdInterrupt]
     metadata*: SvdDeviceMetadata
     cpu*: SvdCpu
 
@@ -303,6 +302,13 @@ func parsePeripheral(pNode: XmlNode, rp: SvdRegisterProperties): SvdPeripheral =
   result.headerStructName = pNode.getChildTextOpt("headerStructName")
 
   let periphRp = pNode.updateRegisterProperties(rp)
+
+  for intNode in pNode.findAllDirect("interrupt"):
+    result.interrupts.add SvdInterrupt(
+      name: intNode.child("name").innerText,
+      description: intNode.getChildTextOpt("description"),
+      value: intNode.child("value").innerText.parseHexOrDecInt
+    )
 
   let registersNode = pNode.child("registers")
   if not isNil(registersNode):

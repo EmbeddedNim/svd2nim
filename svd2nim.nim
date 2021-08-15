@@ -5,6 +5,7 @@ import os
 import algorithm
 import strutils
 import strtabs
+import sequtils
 import httpclient, htmlparser, xmltree
 import tables
 import docopt
@@ -80,18 +81,27 @@ proc renderCortexMExceptionNumbers(cpu: SvdCpu, outf: File) =
     outf.write(repeat(" ", 40-len(itername)))
     outf.write("# $#\n" % excep.description)
 
-proc renderInterrupt(interrupts: seq[SvdInterrupt], outf: File) =
+func getInterrupts(dev: SvdDevice): seq[SvdInterrupt] =
+  # Get interrupts from all periphs
+  dev.peripherals
+    .mapIt(it.interrupts)
+    .foldl(a & b)
+    .sortedByIt(it.value)
+
+proc renderInterrupts(dev: SvdDevice, outf: File) =
   var maxIrq = 0
   # Find all interrupts
-  for iter in interrupts:
-    if maxIrq < iter.index:
-      maxIrq = iter.index
-    if iter.index <= 1:
+  for iter in dev.getInterrupts:
+    if maxIrq < iter.value:
+      maxIrq = iter.value
+    if iter.value <= 1:
       continue
-    var itername = format("  $#_IRQn = $#, " % [iter.name.toUpper, iter.index.intToStr()])
+    var itername = format("  $#_IRQn = $#, " % [iter.name.toUpper, iter.value.intToStr()])
     outf.write(itername)
     outf.write(repeat(" ", 40-len(itername)))
-    outf.write("# $#\n" % iter.description)
+    if iter.description.isSome:
+      outf.write("# $#" % iter.description.get)
+    outf.write("\n")
 
 proc renderTemplates(outf: File) =
   renderHeader("# Templates", outf)
@@ -155,7 +165,7 @@ proc renderDevice(d: SvdDevice, outf: File) =
     outf.write("# Some information about this device.\n")
     outf.write("const DEVICE* = \"$#\"\n" % d.metadata.name)
   # CPU
-    let cpuNameSan = d.cpu.name.replace(re"(M\d+)\+", "$1plus")
+    let cpuNameSan = d.cpu.name.replace(re"(M\d+)\+", "$1PLUS")
     outf.write("const $#_REV* = 0x0001\n" % cpuNameSan)
     outf.write("const MPU_PRESENT* = $#\n" % d.cpu.mpuPresent.intToStr())
     outf.write("const FPU_PRESENT* = $#\n" % d.cpu.fpuPresent.intToStr())
@@ -163,7 +173,7 @@ proc renderDevice(d: SvdDevice, outf: File) =
     outf.write("const Vendor_SysTickConfig* = $#\n" % d.cpu.vendorSystickConfig.intToStr())
 
   renderCortexMExceptionNumbers(d.cpu, outf)
-  renderInterrupt(d.interrupts, outf)
+  renderInterrupts(d, outf)
   #renderPeripheralObjects(d.peripherals, fpuPresent, outf)
   renderTemplates(outf)
   echo("Done")
@@ -215,13 +225,14 @@ Default_Handler:
   // Extra interrupts for peripherals defined by the hardware vendor.
 """ % [d.metadata.name, d.metadata.description, d.metadata.licenseBlock])
 
+  let interrupts = d.getInterrupts
   var num = 0
-  for intr in d.interrupts:
-    if intr.index == num - 1:
+  for intr in interrupts:
+    if intr.value == num - 1:
         continue
-    if intr.index < num:
+    if intr.value < num:
         raise newException(ValueError,"interrupt numbers are not sorted")
-    while intr.index > num:
+    while intr.value > num:
         outf.write("  .long 0\n")
         num += 1
     num += 1
@@ -239,7 +250,7 @@ Default_Handler:
   IRQ PendSV_Handler
   IRQ SysTick_Handler
 """)
-  for intr in d.interrupts:
+  for intr in interrupts:
     outf.write("  IRQ $#_IRQHandler\n" % [intr.name])
 
 ###############################################################################

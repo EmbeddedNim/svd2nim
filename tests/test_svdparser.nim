@@ -135,3 +135,26 @@ suite "Parser Tests":
       mode_enum.values[2] == (name: "Single_MATCH", val: 2)
       mode_enum.values[3] == (name: "Reload_ZERO_MAX", val: 3)
       mode_enum.values[4] == (name: "Reload_MATCH", val: 4)
+
+  test "Parse interrupts":
+    let
+      timer0 = device.getPeriphByName("TIMER0")
+      timer1 = device.getPeriphByName("TIMER1")
+      timer2 = device.getPeriphByName("TIMER2")
+
+    check:
+      timer0.interrupts.len == 1
+      timer1.interrupts.len == 1
+      timer2.interrupts.len == 1
+
+      timer0.interrupts[0].name == "TIMER0"
+      timer0.interrupts[0].description.get == "Timer 0 interrupt"
+      timer0.interrupts[0].value == 0
+
+      timer1.interrupts[0].name == "TIMER1"
+      timer1.interrupts[0].description.get == "Timer 1 interrupt"
+      timer1.interrupts[0].value == 4
+
+      timer2.interrupts[0].name == "TIMER2"
+      timer2.interrupts[0].description.get == "Timer 2 interrupt"
+      timer2.interrupts[0].value == 6

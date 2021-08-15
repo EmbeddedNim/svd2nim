@@ -3,7 +3,8 @@
 ]#
 import os
 import algorithm
-import strutils, strtabs, sequtils
+import strutils
+import strtabs
 import httpclient, htmlparser, xmltree
 import tables
 import docopt
@@ -12,7 +13,6 @@ import regex
 import json
 
 import svdparser
-import svdjson
 
 ###############################################################################
 # Register generation from SVD
@@ -31,37 +31,6 @@ func sanitizeIdent*(ident: string): string =
   for (reg, repl) in reptab:
     result = result.replace(reg, repl)
 
-proc sanitizeRegister(reg: var svdRegister) =
-  # Recursively sanitize register
-  reg.name = reg.name.sanitizeIdent
-  for sreg in reg.registers.mitems:
-    sanitizeRegister(sreg)
-
-  for f in reg.bitfields.mitems:
-    f.name = f.name.sanitizeIdent
-
-proc sanitizePeriph(periph: var svdPeripheral) =
-  # Recursively sanitize peripheral
-  periph.name = periph.name.sanitizeIdent
-  periph.typeName = periph.name.sanitizeIdent
-  periph.groupName = periph.name.sanitizeIdent
-  periph.clusterName = periph.name.sanitizeIdent
-
-  for reg in periph.registers.mitems:
-    reg.sanitizeRegister
-
-  for speriph in periph.subtypes.mitems:
-    speriph.sanitizePeriph
-
-func sanitizeAllNames*(dev: svdDevice): svdDevice =
-  deepCopy(result, dev)
-
-  for periph in result.peripherals.mitems:
-    periph.sanitizePeriph
-
-  for ipt in result.interrupts:
-    ipt.name = ipt.name.sanitizeIdent
-
 proc renderHeader(text: string, outf: File) =
   outf.write("\n")
   outf.write(repeat("#",80))
@@ -71,7 +40,7 @@ proc renderHeader(text: string, outf: File) =
   outf.write(repeat("#",80))
   outf.write("\n")
 
-proc renderCortexMExceptionNumbers(cpu: svdCpu, outf: File) =
+proc renderCortexMExceptionNumbers(cpu: SvdCpu, outf: File) =
   type exception = object
     name: string
     value: int
@@ -111,7 +80,7 @@ proc renderCortexMExceptionNumbers(cpu: svdCpu, outf: File) =
     outf.write(repeat(" ", 40-len(itername)))
     outf.write("# $#\n" % excep.description)
 
-proc renderInterrupt(interrupts: seq[svdInterrupt], outf: File) =
+proc renderInterrupt(interrupts: seq[SvdInterrupt], outf: File) =
   var maxIrq = 0
   # Find all interrupts
   for iter in interrupts:
@@ -123,91 +92,6 @@ proc renderInterrupt(interrupts: seq[svdInterrupt], outf: File) =
     outf.write(itername)
     outf.write(repeat(" ", 40-len(itername)))
     outf.write("# $#\n" % iter.description)
-
-proc renderRegisterBitfields(register: svdRegister, name: string, outf: File) =
-  var sortedBitfields = register.bitfields
-  sortedBitfields.sort(proc (x,y: svdField): int = cmp(x.name, y.name))
-  outf.write("  # $#" % name)
-  if register.description != "":
-    outf.write(": $#" % register.description)
-  outf.write("\n")
-  for bitfield in sortedBitfields:
-    var value: string
-    if bitfield.value == 0:
-      value = "0"
-    else:
-      value = uint32(bitfield.value).toHex().strip(leading=true, trailing=false, {'0'})
-    outf.write("  $#* = 0x$#\n" % [bitfield.name, value])
-
-
-proc renderPeripheralObjects(peripherals: seq[svdPeripheral], fpu: bool, outf: File) =
-  var periphTypes: seq[string]
-  var sortedPeripherals: seq[svdPeripheral]
-  var distinctRegs: seq[svdRegister]
-  # Filter
-  sortedPeripherals = peripherals
-  sortedPeripherals.sort(proc (x,y: svdPeripheral): int = cmp(x.name, y.name))
-
-  # Render
-  renderHeader("# Peripheral Register Objects", outf)
-
-  for periph in sortedPeripherals:
-    if periphTypes.contains(periph.typeName) or periph.derivedFrom != "":
-      continue
-    periphTypes.add(periph.typeName)
-
-  for ptype in periphTypes:
-    outf.write("type $#_Registers = object\n" % ptype)
-
-    var grpPeriphs = sortedPeripherals
-    grpPeriphs.keepItIf(it.typeName == ptype)
-
-    distinctRegs = @[]
-    for grpPeriph in grpPeriphs:
-      for reg in grpPeriph.registers:
-        if distinctRegs.anyIt(it.name == reg.name):
-          continue
-        else:
-          distinctRegs.add(reg)
-    for reg in distinctRegs:
-      var regDef = "  $#*: uint32" % [reg.name]
-      outf.write(regDef)
-      outf.write(repeat(" ", 40-len(regDef)))
-      outf.write("# $#\n" % reg.description)
-
-    outf.write("\n")
-
-  renderHeader("# Peripherals", outf)
-  outf.write("const\n")
-  for periph in sortedPeripherals:
-    outf.write("  p$# = cast[pointer](0x$#)\n" % [periph.name, periph.baseAddress.toHex()])
-  outf.write("\n")
-  outf.write("const\n")
-  for periph in sortedPeripherals:
-    outf.write("  $#* = cast[ptr $#_Registers](p$#)\n" % [periph.name, periph.typeName, periph.name])
-
-  for ptype in periphTypes:
-    renderHeader("# Bitfields for $#" % [ptype], outf)
-
-    var grpPeriphs = sortedPeripherals
-    grpPeriphs.keepItIf(it.typeName == ptype)
-
-    distinctRegs = @[]
-    for grpPeriph in grpPeriphs:
-      for reg in grpPeriph.registers:
-        if distinctRegs.anyIt(it.name == reg.name):
-          continue
-        else:
-          distinctRegs.add(reg)
-
-    if distinctRegs.len > 0:
-      outf.write("const\n")
-      for register in distinctRegs:
-        if register.bitfields.len() > 0:
-          renderRegisterBitfields(register, register.name, outf)
-        for subregister in register.registers:
-          renderRegisterBitfields(subregister, register.name & "." & subregister.name, outf)
-      outf.write("\n")
 
 proc renderTemplates(outf: File) =
   renderHeader("# Templates", outf)
@@ -260,7 +144,7 @@ proc renderTemplates(outf: File) =
 """)
 
 
-proc renderDevice(d: svdDevice, outf: File) =
+proc renderDevice(d: SvdDevice, outf: File) =
   echo("Generating nim register mapping for $#" % d.metadata.name)
   outf.write("# Peripheral access API for $# microcontrollers (generated using svd2nim)\n" % d.metadata.name.toUpper())
   outf.write("# You can find an overview of the API here.\n\n")
@@ -280,11 +164,11 @@ proc renderDevice(d: svdDevice, outf: File) =
 
   renderCortexMExceptionNumbers(d.cpu, outf)
   renderInterrupt(d.interrupts, outf)
-  renderPeripheralObjects(d.peripherals, fpuPresent, outf)
+  #renderPeripheralObjects(d.peripherals, fpuPresent, outf)
   renderTemplates(outf)
   echo("Done")
 
-proc renderStartup(d: svdDevice, outf: File) =
+proc renderStartup(d: SvdDevice, outf: File) =
   echo("Generating startup file for $#" % d.metadata.name)
   outf.write("""# Automatically generated file. DO NOT EDIT.
 // Generated by gen-device-svd.py from $#
@@ -425,7 +309,6 @@ proc main() =
     -p --updatePatched  # Get the latest version of the SVD files from https://stm32.agg.io/rs/
     -h --help           # Show this screen.
     -v --version        # Show version.
-    --json              # Dump json output of parsed SVD (useful for debugging)
   """
 
   let args = docopt(help, version = "0.1.0")
@@ -440,15 +323,10 @@ proc main() =
     let dev = readSVD($args["<svdFile>"])
 
     var outf = open(dev.metadata.name.toLower() & ".nim",fmWrite)
-    renderDevice(dev.sanitizeAllNames, outf)
+    renderDevice(dev, outf)
 
     outf = open(dev.metadata.name.toLower() & ".s", fmwrite)
     renderStartup(dev, outf)
-
-    if args.contains("--json"):
-      outf = open(dev.metadata.name.toLower() & ".json", fmWrite)
-      outf.write(dev.toJson.pretty(2))
-      outf.close
 
   else:
     echo "Try: svd2nim -h"

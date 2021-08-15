@@ -10,7 +10,7 @@ import strformat
 # Models
 ###############################################################################
 
-type SvdBitrange = tuple
+type SvdBitrange* = tuple
   lsb, msb: Natural
 
 type SvdFieldEnum* = object

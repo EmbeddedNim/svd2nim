@@ -14,53 +14,69 @@ type SvdBitrange = tuple
   lsb, msb: Natural
 
 type SvdFieldEnum* = object
+  # https://arm-software.github.io/CMSIS_5/SVD/html/elem_registers.html#elem_enumeratedValues
   name*: Option[string]
   derivedFrom*: Option[string]
   headerEnumName*: Option[string]
   values*: seq[tuple[name: string, val: int]]
 
-type
-  SvdField* = ref object of RootObj
-    name*: string
-    derivedFrom*: Option[string]
-    description*: Option[string]
-    bitRange*: SvdBitrange
-    enumValues*: Option[SvdFieldEnum]
+type SvdField* = object
+  # https://arm-software.github.io/CMSIS_5/SVD/html/elem_registers.html#elem_field
+  name*: string
+  derivedFrom*: Option[string]
+  description*: Option[string]
+  bitRange*: SvdBitrange
+  enumValues*: Option[SvdFieldEnum]
 
-type
-  SvdRegister* = ref object of RootObj
-    name*: string
-    derivedFrom*: Option[string]
-    addressOffset*: Natural
-    description*: Option[string]
-    size*: Option[Natural]
-    fields*: seq[SvdField]
+type SvdRegisterAccess* = enum
+  raReadOnly
+  raWriteOnly
+  raReadWrite
+  raWriteOnce
+  raReadWriteOnce
+
+type SvdRegisterProperties* = object
+  # https://arm-software.github.io/CMSIS_5/SVD/html/elem_special.html#registerPropertiesGroup_gr
+  size*: Natural
+  access*: SvdRegisterAccess
+  # Other fields not implemented for the moment
+  # protection
+  # resetValue
+  # resetMask
+
+type SvdRegister* = ref object
+  # https://arm-software.github.io/CMSIS_5/SVD/html/elem_registers.html#elem_register
+  name*: string
+  derivedFrom*: Option[string]
+  addressOffset*: Natural
+  description*: Option[string]
+  properties*: SvdRegisterProperties
+  fields*: seq[SvdField]
 
 type SvdCluster* {.acyclic.} = ref object
+  # https://arm-software.github.io/CMSIS_5/SVD/html/elem_registers.html#elem_cluster
   name*: string
   derivedFrom*: Option[string]
   description*: Option[string]
   headerStructName*: Option[string]
   addressOffset*: Natural
-  size*: Option[Natural] # Default size of child registers (bits)
+  registers*: seq[SvdRegister]
+  clusters*: seq[SvdCluster]
+
+type SvdPeripheral* = ref object
+  # https://arm-software.github.io/CMSIS_5/SVD/html/elem_peripherals.html#elem_peripheral
+  name*: string
+  derivedFrom*: Option[string]
+  description*: Option[string]
+  baseAddress*: Natural
+  prependToName*: Option[string]
+  appendToName*: Option[string]
+  headerStructName*: Option[string]
   registers*: seq[SvdRegister]
   clusters*: seq[SvdCluster]
 
 type
-  SvdPeripheral* = ref object of RootObj
-    name*: string
-    derivedFrom*: Option[string]
-    description*: Option[string]
-    baseAddress*: Natural
-    prependToName*: Option[string]
-    appendToName*: Option[string]
-    headerStructName*: Option[string]
-    size*: Option[Natural] # Default size of child registers (bits)
-    registers*: seq[SvdRegister]
-    clusters*: seq[SvdCluster]
-
-type
-  SvdDeviceMetadata* = ref object of RootObj
+  SvdDeviceMetadata* = ref object
     file*: string
     name*: string
     nameLower*: string
@@ -68,13 +84,13 @@ type
     licenseBlock*: string
 
 type
-  SvdInterrupt* = ref object of RootObj
+  SvdInterrupt* = ref object
     name*: string
     index*: int
     description*: string
 
 type
-  SvdCpu* = ref object of RootObj
+  SvdCpu* = ref object
     name*: string
     revision*: string
     endian*: string
@@ -84,7 +100,7 @@ type
     vendorSystickConfig*: int
 
 type
-  SvdDevice* = ref object of RootObj
+  SvdDevice* = ref object
     peripherals*: seq[SvdPeripheral]
     interrupts*: seq[SvdInterrupt]
     metadata*: SvdDeviceMetadata
@@ -132,6 +148,33 @@ func getChildNaturalOpt(pNode: XmlNode, tag:string): Option[Natural] =
     else:
       return some(text.get().parseHexOrDecInt.Natural)
 
+func updateRegisterProperties(
+  node: XmlNode,
+  parentProps: SvdRegisterProperties):
+  SvdRegisterProperties =
+
+  # Update an existing RegisterProperties object with the properties specified
+  # by the current node, if applicable.
+  #
+  # RegisterProperties can be specified by parent node of a Register. The properties
+  # are inherited but can be modified by children.
+  # See: https://arm-software.github.io/CMSIS_5/SVD/html/elem_special.html#registerPropertiesGroup_gr
+
+  result = parentProps
+  let
+    size = node.getChildNaturalOpt("size")
+    access = node.getChildTextOpt("access")
+
+  if size.isSome: result.size = size.get
+  if access.isSome:
+    result.access = case access.get:
+      of "read-write": raReadWrite
+      of "read-only": raReadOnly
+      of "write-only": raWriteOnly
+      of "writeOnce": raWriteOnce
+      of "read-writeOnce": raReadWriteOnce
+      else: result.access
+
 func attrOpt(n: XmlNode, name: string): Option[string] =
   # Return some(attr_value) if attr exists, otherwise none
   if isNil(n.attrs):
@@ -171,7 +214,6 @@ func parseFieldEnum(eNode: XmlNode): SvdFieldEnum =
 
 func parseField(fNode: XmlNode): SvdField =
   assert fNode.tag == "field"
-  result = new(SvdField)
   result.name = fNode.child("name").innerText
   result.derivedFrom = fNode.attrOpt("derivedFrom")
   result.description = fNode.getChildTextOpt("description")
@@ -216,7 +258,7 @@ func parseField(fNode: XmlNode): SvdField =
   else:
     result.enumValues = none(SvdFieldEnum)
 
-func parseRegister(rNode: XmlNode): SvdRegister =
+func parseRegister(rNode: XmlNode, rp: SvdRegisterProperties): SvdRegister =
   assert rNode.tag == "register"
   result = new(SvdRegister)
 
@@ -224,14 +266,14 @@ func parseRegister(rNode: XmlNode): SvdRegister =
   result.derivedFrom = rNode.attrOpt("derivedFrom")
   result.addressOffset = rNode.child("addressOffset").innerText.parseHexOrDecInt.Natural
   result.description = rNode.getChildTextOpt("description")
-  result.size = rNode.getChildNaturalOpt("size")
+  result.properties = rNode.updateRegisterProperties(rp)
 
   let fieldsTag = rnode.child("fields")
   if not isNil(fieldsTag):
     for fieldNode in fieldsTag.findAllDirect("field"):
       result.fields.add fieldNode.parseField
 
-func parseCluster(cNode: XmlNode): SvdCluster =
+func parseCluster(cNode: XmlNode, rp: SvdRegisterProperties): SvdCluster =
   assert cNode.tag == "cluster"
   result = new(SvdCluster)
 
@@ -240,14 +282,15 @@ func parseCluster(cNode: XmlNode): SvdCluster =
   result.description = cNode.getChildTextOpt("description")
   result.headerStructName = cNode.getChildTextOpt("headerStructName")
   result.addressOffset = cNode.child("addressOffset").innerText.parseHexOrDecInt.Natural
-  result.size = cNode.getChildNaturalOpt("size")
+
+  let clusterRp = cNode.updateRegisterProperties(rp)
 
   for childClusterNode in cNode.findAllDirect("cluster"):
-    result.clusters.add childClusterNode.parseCluster
+    result.clusters.add childClusterNode.parseCluster(clusterRp)
   for registerNode in cNode.findAllDirect("register"):
-    result.registers.add registerNode.parseRegister
+    result.registers.add registerNode.parseRegister(clusterRp)
 
-func parsePeripheral(pNode: XmlNode): SvdPeripheral =
+func parsePeripheral(pNode: XmlNode, rp: SvdRegisterProperties): SvdPeripheral =
   assert pNode.tag == "peripheral"
   result = new(SvdPeripheral)
 
@@ -258,14 +301,15 @@ func parsePeripheral(pNode: XmlNode): SvdPeripheral =
   result.appendToName = pNode.getChildTextOpt("appendToName")
   result.prependToName = pNode.getChildTextOpt("prependToName")
   result.headerStructName = pNode.getChildTextOpt("headerStructName")
-  result.size = pNode.getChildNaturalOpt("size")
+
+  let periphRp = pNode.updateRegisterProperties(rp)
 
   let registersNode = pNode.child("registers")
   if not isNil(registersNode):
     for clusterNode in registersNode.findAllDirect("cluster"):
-      result.clusters.add clusterNode.parseCluster
+      result.clusters.add clusterNode.parseCluster(periphRp)
     for registerNode in registersNode.findAllDirect("register"):
-      result.registers.add registerNode.parseRegister
+      result.registers.add registerNode.parseRegister(periphRp)
 
 ###############################################################################
 # Public Procedures
@@ -276,6 +320,9 @@ proc readSVD*(path: string): SvdDevice =
     xml = path.loadXml()
     deviceName = xml.child("name").getText()
     deviceDescription = xml.child("description").getText().strip()
+    defaultRegProps = xml.updateRegisterProperties(
+      SvdRegisterProperties(access: raReadWrite, size: 32)
+      )
 
   #TODO: Does the schema allow multiple license texts?
   var licenseTexts = xml.findAll("licenseText")
@@ -311,6 +358,6 @@ proc readSVD*(path: string): SvdDevice =
   )
 
   for pNode in xml.child("peripherals").findAllDirect("peripheral"):
-    result.peripherals.add pNode.parsePeripheral
+    result.peripherals.add pNode.parsePeripheral(defaultRegProps)
 
 export options

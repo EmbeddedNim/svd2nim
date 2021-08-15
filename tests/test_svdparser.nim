@@ -12,8 +12,8 @@ func getPeriphByName(dev: SvdDevice, name: string): SvdPeripheral =
 suite "Parser Tests":
   setup:
     let
-      device = readSVD("./tests/ARM_Example.svd")
-      samd21 = readSVD("./tests/ATSAMD21G18A.svd")
+      device {.used.} = readSVD("./tests/ARM_Example.svd")
+      samd21 {.used.} = readSVD("./tests/ATSAMD21G18A.svd")
 
   test "Parse peripheral data":
     let
@@ -24,7 +24,6 @@ suite "Parser Tests":
     check:
       timer0.description.get() == "32 Timer / Counter, counting up or down from different sources"
       timer0.baseAddress == 0x40010000
-      timer0.size.get() == 32
       timer0.derivedFrom.isNone
       timer0.prependToName.isNone
       timer0.appendToName.isNone
@@ -48,7 +47,6 @@ suite "Parser Tests":
       mode0.headerStructName.get == "RtcMode0"
       mode0.addressOffset == 0
       mode0.registers.len == 11
-      mode0.size.isNone
       mode0.derivedFrom.isNone
 
   test "Parse register data":
@@ -60,9 +58,45 @@ suite "Parser Tests":
       regCR.name == "CR"
       regCR.description.get == "Control Register"
       regCR.addressOffset == 0
-      regCR.size.get == 32
       regCR.derivedFrom.isNone
       regCR.fields.len == 12
+
+  test "Register properties inherited":
+    let
+      timer0 = device.getPeriphByName("TIMER0")
+      cr = timer0.registers[0]
+      sr = timer0.registers[1]
+      regInt = timer0.registers[2]
+      count = timer0.registers[3]
+      match = timer0.registers[4]
+      prescale_rd = timer0.registers[5]
+      prescale_wr = timer0.registers[6]
+      reload = timer0.registers[7]
+
+    check:
+      cr.properties.size == 32
+      cr.properties.access == raReadWrite
+
+      sr.properties.size == 16
+      sr.properties.access == raReadWrite
+
+      regInt.properties.size == 16
+      regInt.properties.access == raReadWrite
+
+      count.properties.size == 32
+      count.properties.access == raReadWrite
+
+      match.properties.size == 32
+      match.properties.access == raReadWrite
+
+      prescale_rd.properties.size == 32
+      prescale_rd.properties.access == raReadOnly
+
+      prescale_wr.properties.size == 32
+      prescale_wr.properties.access == raWriteOnly
+
+      reload.properties.size == 32
+      reload.properties.access == raReadWrite
 
   test "Parse field data":
     let

@@ -1,2 +1,7 @@
 nimcache/
 build/
+
+*.kate-swp
+
+scratch.nim
+atsamd*.*

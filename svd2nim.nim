@@ -14,24 +14,11 @@ import regex
 import json
 
 import svdparser
+import svdperipherals
 
 ###############################################################################
 # Register generation from SVD
 ###############################################################################
-func sanitizeIdent*(ident: string): string =
-  # Sanitize identifier so that it conforms to nim's rules
-  # Exported (*) for testing purposes
-  const reptab: array[4, (Regex, string)] = [
-    (re"[!$%&*+-./:<=>?@\\^|~]", ""),         # Operators
-    (re"[\[\]\(\)`\{\},;\.:]", ""),           # Other tokens
-    (re"_(_)+", "_"),                         # Subsequent underscores
-    (re"_$", ""),                             # Trailing underscore
-  ]
-
-  result = ident
-  for (reg, repl) in reptab:
-    result = result.replace(reg, repl)
-
 proc renderHeader(text: string, outf: File) =
   outf.write("\n")
   outf.write(repeat("#",80))

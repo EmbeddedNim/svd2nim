@@ -10,30 +10,33 @@ func getPeriphByName(dev: SvdDevice, name: string): SvdPeripheral =
   for per in dev.peripherals:
     if per.name == name: return per
 
-proc echoTypeDefs(td: seq[PeripheralTreeNode]) =
-  discard
+proc dumpInstances(nodes: seq[InstanceNode]) =
+  for n in nodes:
+    case n.kind:
+    of inPeripheral:
+      echo fmt"Peripheral: {n.periph.name} (typeName: {n.typeName})"
+    of inCluster:
+      echo fmt"Cluster: {n.cluster.name} (typeName: {n.typeName})"
+    of inRegister:
+      echo fmt"Register: {n.register.name} (typeName: {n.typeName}, addr: {n.absAddr})"
 
 # Test suites
 
-suite "Ordering tests":
+suite "Instance creation":
   setup:
     let
       device {.used.} = readSVD("./tests/ARM_Example.svd")
       samd21 {.used.} = readSVD("./tests/ATSAMD21G18A.svd")
 
-  test "Peripheral with registers and a union":
+  test "Create correct instances":
     let
       timer0 = device.getPeriphByName("TIMER0")
-      typeDefOrder = timer0.getSortedObjectDefs
+      timer0Instances = timer0.getSortedInstances()
 
+    #dumpInstances timer0Instances
+    for periph in samd21.peripherals:
+      periph.getSortedInstances.dumpInstances
     check:
-      typeDefOrder.len == 2
-      typeDefOrder[0].kind == ptUnion
-      typeDefOrder[1].kind == ptPeripheral
-
-  test "Struct with single union":
-    let
-      tc3 = samd21.getPeriphByName("TC3")
-      tdo = tc3.getSortedObjectDefs()
-
-    
+      timer0Instances.len == 9
+      # Peripheral should be last, after instances
+      timer0Instances[^1].kind == inPeripheral

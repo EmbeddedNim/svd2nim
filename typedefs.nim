@@ -1,0 +1,1 @@
+# Generate object type definitions to be written in nim code output

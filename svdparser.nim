@@ -5,106 +5,8 @@ import options
 import strtabs
 import regex
 import strformat
-
-###############################################################################
-# Models
-###############################################################################
-
-type SvdBitrange* = tuple
-  lsb, msb: Natural
-
-type SvdFieldEnum* = object
-  # https://arm-software.github.io/CMSIS_5/SVD/html/elem_registers.html#elem_enumeratedValues
-  name*: Option[string]
-  derivedFrom*: Option[string]
-  headerEnumName*: Option[string]
-  values*: seq[tuple[name: string, val: int]]
-
-type SvdField* = object
-  # https://arm-software.github.io/CMSIS_5/SVD/html/elem_registers.html#elem_field
-  name*: string
-  derivedFrom*: Option[string]
-  description*: Option[string]
-  bitRange*: SvdBitrange
-  enumValues*: Option[SvdFieldEnum]
-
-type SvdRegisterAccess* = enum
-  raReadOnly
-  raWriteOnly
-  raReadWrite
-  raWriteOnce
-  raReadWriteOnce
-
-type SvdRegisterProperties* = object
-  # https://arm-software.github.io/CMSIS_5/SVD/html/elem_special.html#registerPropertiesGroup_gr
-  size*: Natural
-  access*: SvdRegisterAccess
-  # Other fields not implemented for the moment
-  # protection
-  # resetValue
-  # resetMask
-
-type SvdRegister* = ref object
-  # https://arm-software.github.io/CMSIS_5/SVD/html/elem_registers.html#elem_register
-  name*: string
-  derivedFrom*: Option[string]
-  addressOffset*: Natural
-  description*: Option[string]
-  properties*: SvdRegisterProperties
-  fields*: seq[SvdField]
-
-type SvdCluster* {.acyclic.} = ref object
-  # https://arm-software.github.io/CMSIS_5/SVD/html/elem_registers.html#elem_cluster
-  name*: string
-  derivedFrom*: Option[string]
-  description*: Option[string]
-  headerStructName*: Option[string]
-  addressOffset*: Natural
-  registers*: seq[SvdRegister]
-  clusters*: seq[SvdCluster]
-
-type SvdInterrupt* = object
-  name*: string
-  description*: Option[string]
-  value*: int
-
-type SvdPeripheral* = ref object
-  # https://arm-software.github.io/CMSIS_5/SVD/html/elem_peripherals.html#elem_peripheral
-  name*: string
-  derivedFrom*: Option[string]
-  description*: Option[string]
-  baseAddress*: Natural
-  prependToName*: Option[string]
-  appendToName*: Option[string]
-  headerStructName*: Option[string]
-  registers*: seq[SvdRegister]
-  clusters*: seq[SvdCluster]
-  interrupts*: seq[SvdInterrupt]
-
-type
-  SvdDeviceMetadata* = ref object
-    file*: string
-    name*: string
-    nameLower*: string
-    description*: string
-    licenseBlock*: string
-
-type
-  SvdCpu* = ref object
-    name*: string
-    revision*: string
-    endian*: string
-    mpuPresent*: int
-    fpuPresent*: int
-    nvicPrioBits*: int
-    vendorSystickConfig*: int
-
-type
-  SvdDevice* = ref object
-    peripherals*: seq[SvdPeripheral]
-    metadata*: SvdDeviceMetadata
-    cpu*: SvdCpu
-
+import expansions
+import types
 
 ###############################################################################
 # Private Procedures
@@ -289,6 +191,18 @@ func parseCluster(cNode: XmlNode, rp: SvdRegisterProperties): SvdCluster =
   for registerNode in cNode.findAllDirect("register"):
     result.registers.add registerNode.parseRegister(clusterRp)
 
+func setAllTypeNames(c: var SvdCluster, parentTypeName: string) =
+  c.nimTypeName = c.headerStructName.get(c.name)
+  for child in c.clusters.mitems: child.setAllTypeNames(c.nimTypeName)
+  for reg in c.registers.mitems:
+    reg.nimTypeName = c.nimTypeName & "_" & reg.name
+
+func setAllTypeNames(p: var SvdPeripheral) =
+  p.nimTypeName = p.headerStructName.get(p.name)
+  for c in p.clusters.mitems: c.setAllTypeNames(p.nimTypeName)
+  for reg in p.registers.mitems:
+    reg.nimTypeName = p.nimTypeName & "_" & reg.name
+
 func parsePeripheral(pNode: XmlNode, rp: SvdRegisterProperties): SvdPeripheral =
   assert pNode.tag == "peripheral"
   result = new(SvdPeripheral)
@@ -316,6 +230,8 @@ func parsePeripheral(pNode: XmlNode, rp: SvdRegisterProperties): SvdPeripheral =
       result.clusters.add clusterNode.parseCluster(periphRp)
     for registerNode in registersNode.findAllDirect("register"):
       result.registers.add registerNode.parseRegister(periphRp)
+
+  result.setAllTypeNames()
 
 ###############################################################################
 # Public Procedures
@@ -366,4 +282,11 @@ proc readSVD*(path: string): SvdDevice =
   for pNode in xml.child("peripherals").findAllDirect("peripheral"):
     result.peripherals.add pNode.parsePeripheral(defaultRegProps)
 
+  # Expand derivedFrom entities in peripherals and their children
+  expandDerives result.peripherals
+
 export options
+
+when isMainModule:
+  #let device = readSVD("./tests/ARM_Example.svd")
+  let device = readSVD("./tests/ATSAMD21G18A.svd")

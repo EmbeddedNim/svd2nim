@@ -1,8 +1,9 @@
 when false:
   import unittest
   import svd2nim
-  suite "general tests":
+  import types
 
+  suite "general tests":
 
     test "sanitize identifiers":
       check:

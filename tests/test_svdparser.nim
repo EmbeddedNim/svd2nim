@@ -1,11 +1,29 @@
 import unittest
 import svdparser
+import types
 
 # Some utility functions
 
 func getPeriphByName(dev: SvdDevice, name: string): SvdPeripheral =
   for per in dev.peripherals:
     if per.name == name: return per
+  raise newException(ValueError, name & " not found")
+
+func findRegisterByName(p: SvdPeripheral, name: string): SvdRegister =
+  for reg in p.registers:
+    if reg.name == name: return reg
+
+  var clusterStack: seq[SvdCluster]
+  for cls in p.clusters:
+    clusterStack.add cls
+  while clusterStack.len > 0:
+    let cls = clusterStack.pop
+    for reg in cls.registers:
+      if reg.name == name: return reg
+    for cc in cls.clusters:
+      clusterStack.add cc
+
+  raise newException(ValueError, name & " not found")
 
 # Test suites
 
@@ -158,3 +176,33 @@ suite "Parser Tests":
       timer2.interrupts[0].name == "TIMER2"
       timer2.interrupts[0].description.get == "Timer 2 interrupt"
       timer2.interrupts[0].value == 6
+
+  test "Peripheral derived":
+    let
+      timer0 = device.getPeriphByName("TIMER0")
+      timer1 = device.getPeriphByName("TIMER1")
+      timer2 = device.getPeriphByName("TIMER2")
+
+    check:
+      timer1.baseAddress == 0x40010100
+      timer1.interrupts.len == 1
+      timer1.interrupts[0].name == "TIMER1"
+      timer1.registers.len == timer0.registers.len
+      timer1.nimTypeName == timer0.nimTypeName
+
+      timer2.baseAddress == 0x40010200
+      timer2.interrupts.len == 1
+      timer2.interrupts[0].name == "TIMER2"
+      timer2.registers.len == timer0.registers.len
+      timer2.nimTypeName == timer0.nimTypeName
+
+  test "Register derived":
+    let
+      port = samd21.getPeriphByName("PORT")
+      pmux1 = port.findRegisterByName("PMUX1_%s")
+      pmux0 = port.findRegisterByName("PMUX0_%s")
+
+    check:
+      pmux1.fields.len == pmux0.fields.len
+      pmux1.nimTypeName == pmux0.nimTypeName
+      pmux1.addressOffset == 0xb0

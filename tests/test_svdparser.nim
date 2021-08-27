@@ -82,39 +82,30 @@ suite "Parser Tests":
   test "Register properties inherited":
     let
       timer0 = device.getPeriphByName("TIMER0")
-      cr = timer0.registers[0]
+      #cr = timer0.registers[0]
       sr = timer0.registers[1]
-      regInt = timer0.registers[2]
-      count = timer0.registers[3]
-      match = timer0.registers[4]
+      #regInt = timer0.registers[2]
+      #count = timer0.registers[3]
+      #match = timer0.registers[4]
       prescale_rd = timer0.registers[5]
       prescale_wr = timer0.registers[6]
-      reload = timer0.registers[7]
+      #reload = timer0.registers[7]
 
     check:
-      cr.properties.size == 32
-      cr.properties.access == raReadWrite
+      device.registerProperties.size.get == 32
+      device.registerProperties.access.get == raReadWrite
 
-      sr.properties.size == 16
-      sr.properties.access == raReadWrite
+      timer0.registerProperties.size.get == 32
+      timer0.registerProperties.access.get == raReadWrite
 
-      regInt.properties.size == 16
-      regInt.properties.access == raReadWrite
+      sr.properties.size.get == 16
+      sr.properties.access.get == raReadWrite
 
-      count.properties.size == 32
-      count.properties.access == raReadWrite
+      prescale_rd.properties.size.get == 32
+      prescale_rd.properties.access.get == raReadOnly
 
-      match.properties.size == 32
-      match.properties.access == raReadWrite
-
-      prescale_rd.properties.size == 32
-      prescale_rd.properties.access == raReadOnly
-
-      prescale_wr.properties.size == 32
-      prescale_wr.properties.access == raWriteOnly
-
-      reload.properties.size == 32
-      reload.properties.access == raReadWrite
+      prescale_wr.properties.size.get == 32
+      prescale_wr.properties.access.get == raWriteOnly
 
   test "Parse field data":
     let
@@ -182,6 +173,7 @@ suite "Parser Tests":
       timer0 = device.getPeriphByName("TIMER0")
       timer1 = device.getPeriphByName("TIMER1")
       timer2 = device.getPeriphByName("TIMER2")
+      port_iobus = samd21.getPeriphByName("PORT_IOBUS")
 
     check:
       timer1.baseAddress == 0x40010100
@@ -196,6 +188,8 @@ suite "Parser Tests":
       timer2.registers.len == timer0.registers.len
       timer2.nimTypeName == timer0.nimTypeName
 
+      port_iobus.prependToName.get == "PORT_IOBUS_"
+
   test "Register derived":
     let
       port = samd21.getPeriphByName("PORT")
@@ -206,3 +200,6 @@ suite "Parser Tests":
       pmux1.fields.len == pmux0.fields.len
       pmux1.nimTypeName == pmux0.nimTypeName
       pmux1.addressOffset == 0xb0
+
+      pmux1.properties.size == pmux0.properties.size
+      pmux1.properties.access == pmux0.properties.access

@@ -28,8 +28,8 @@ type SvdRegisterAccess* = enum
 
 type SvdRegisterProperties* = object
   # https://arm-software.github.io/CMSIS_5/SVD/html/elem_special.html#registerPropertiesGroup_gr
-  size*: Natural
-  access*: SvdRegisterAccess
+  size*: Option[Natural]
+  access*: Option[SvdRegisterAccess]
   # Other fields not implemented for the moment
   # protection
   # resetValue
@@ -55,6 +55,7 @@ type SvdCluster* {.acyclic.} = ref object
   registers*: seq[SvdRegister]
   clusters*: seq[SvdCluster]
   nimTypeName*: string
+  registerProperties*: SvdRegisterProperties
 
 type SvdInterrupt* = object
   name*: string
@@ -74,6 +75,7 @@ type SvdPeripheral* = ref object
   clusters*: seq[SvdCluster]
   interrupts*: seq[SvdInterrupt]
   nimTypeName*: string
+  registerProperties*: SvdRegisterProperties
 
 type
   SvdDeviceMetadata* = ref object
@@ -98,3 +100,4 @@ type
     peripherals*: seq[SvdPeripheral]
     metadata*: SvdDeviceMetadata
     cpu*: SvdCpu
+    registerProperties*: SvdRegisterProperties

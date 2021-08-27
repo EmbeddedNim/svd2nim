@@ -24,7 +24,8 @@ func hash(a: SvdEntity): Hash =
 type Graph*[T] = object
   edgeTable: Table[T, HashSet[T]]
 
-func dumps[T](g: Graph[T]): string =
+# For debugging
+func dumps[T](g: Graph[T]): string {.used.} =
   for (k, v) in g.edgeTable.pairs:
     let vStr = toSeq(v).mapIt($it).join(", ")
     result = result & fmt"{$k} -> [{vStr}]" & "\n"
@@ -168,6 +169,11 @@ proc expandDerives*(periphs: var seq[SvdPeripheral]) =
       if p.appendToName.isNone: p.appendToName = parent.appendToName
       if p.headerStructName.isNone: p.headerStructName = parent.headerStructName
 
+      if p.registerProperties.size.isNone:
+        p.registerProperties.size = parent.registerProperties.size
+      if p.registerProperties.access.isNone:
+        p.registerProperties.access = parent.registerProperties.access
+
       # No support for derived items that redefine children clusters/peripherals
       # Otherwise we need to define a new type. Current implementation reuses parent type
       doAssert p.registers.len == 0
@@ -181,13 +187,15 @@ proc expandDerives*(periphs: var seq[SvdPeripheral]) =
       # derived item should also define it's own interrupts.
       if parent.interrupts.len > 0: doAssert p.interrupts.len > 0
 
-      # TODO: What to do if peripheral redefines Register Properties?
-      # Fix by applying properties during codegen instead of parse.
-
     of seCluster:
       let parent = parentEntity.cluster
       var c = n.cluster
       if c.headerStructName.isNone: c.headerStructName = parent.headerStructName
+
+      if c.registerProperties.size.isNone:
+        c.registerProperties.size = parent.registerProperties.size
+      if c.registerProperties.access.isNone:
+        c.registerProperties.access = parent.registerProperties.access
 
       # No support for derived items that redefine children clusters/peripherals
       # Otherwise we need to define a new type. Current implementation reuses parent type
@@ -200,8 +208,11 @@ proc expandDerives*(periphs: var seq[SvdPeripheral]) =
     of seRegister:
       let parent = parentEntity.register
       var r = n.register
-      # TODO: check if properties are present and should be overwritten
-      r.properties = parent.properties
+
+      if r.properties.size.isNone:
+        r.properties.size = parent.properties.size
+      if r.properties.access.isNone:
+        r.properties.access = parent.properties.access
 
       # See above note. Currently, derived registers that redefine fields are
       # not supported. Would need to define a new type.

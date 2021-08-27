@@ -4,9 +4,10 @@ import xmltree
 import options
 import strtabs
 import regex
-import strformat
+import svdexceptions
 import expansions
 import types
+import strformat
 
 ###############################################################################
 # Private Procedures
@@ -49,32 +50,22 @@ func getChildNaturalOpt(pNode: XmlNode, tag:string): Option[Natural] =
     else:
       return some(text.get().parseHexOrDecInt.Natural)
 
-func updateRegisterProperties(
-  node: XmlNode,
-  parentProps: SvdRegisterProperties):
-  SvdRegisterProperties =
-
-  # Update an existing RegisterProperties object with the properties specified
-  # by the current node, if applicable.
-  #
-  # RegisterProperties can be specified by parent node of a Register. The properties
-  # are inherited but can be modified by children.
-  # See: https://arm-software.github.io/CMSIS_5/SVD/html/elem_special.html#registerPropertiesGroup_gr
-
-  result = parentProps
+func parseRegisterProperties(node: XmlNode): SvdRegisterProperties =
+  discard
   let
     size = node.getChildNaturalOpt("size")
     access = node.getChildTextOpt("access")
 
-  if size.isSome: result.size = size.get
+  result.size = size
+
   if access.isSome:
     result.access = case access.get:
-      of "read-write": raReadWrite
-      of "read-only": raReadOnly
-      of "write-only": raWriteOnly
-      of "writeOnce": raWriteOnce
-      of "read-writeOnce": raReadWriteOnce
-      else: result.access
+      of "read-write": raReadWrite.some
+      of "read-only": raReadOnly.some
+      of "write-only": raWriteOnly.some
+      of "writeOnce": raWriteOnce.some
+      of "read-writeOnce": raReadWriteOnce.some
+      else: raise newException(SVDError, "Unknown access value: " & access.get)
 
 func attrOpt(n: XmlNode, name: string): Option[string] =
   # Return some(attr_value) if attr exists, otherwise none
@@ -101,7 +92,7 @@ func parseFieldEnum(eNode: XmlNode): SvdFieldEnum =
 
   let usage = eNode.child("usage")
   if not isNil(usage) and usage.innerText != "read-write":
-    raise newException(ValueError, "Separate read/write enums not implemented")
+    raise newException(NotImplementedError, "Separate read/write enums not implemented")
 
   for enumValueNode in eNode.findAllDirect("enumeratedValue"):
     let valueNode = enumValueNode.child("value")
@@ -151,7 +142,7 @@ func parseField(fNode: XmlNode): SvdField =
       lsb: Natural = m.group(1, text)[0].parseHexOrDecInt
     result.bitRange = (lsb: lsb, msb: msb)
   else:
-    raise newException(ValueError, fmt"Invalid bit range specification in field '{result.name}'")
+    raise newException(SVDError, fmt"Invalid bit range specification in field '{result.name}'")
 
   let enumVals = fNode.child("enumeratedValues")
   if not isNil(enumVals):
@@ -159,7 +150,7 @@ func parseField(fNode: XmlNode): SvdField =
   else:
     result.enumValues = none(SvdFieldEnum)
 
-func parseRegister(rNode: XmlNode, rp: SvdRegisterProperties): SvdRegister =
+func parseRegister(rNode: XmlNode): SvdRegister =
   assert rNode.tag == "register"
   result = new(SvdRegister)
 
@@ -167,14 +158,14 @@ func parseRegister(rNode: XmlNode, rp: SvdRegisterProperties): SvdRegister =
   result.derivedFrom = rNode.attrOpt("derivedFrom")
   result.addressOffset = rNode.child("addressOffset").innerText.parseHexOrDecInt.Natural
   result.description = rNode.getChildTextOpt("description")
-  result.properties = rNode.updateRegisterProperties(rp)
+  result.properties = rNode.parseRegisterProperties
 
   let fieldsTag = rnode.child("fields")
   if not isNil(fieldsTag):
     for fieldNode in fieldsTag.findAllDirect("field"):
       result.fields.add fieldNode.parseField
 
-func parseCluster(cNode: XmlNode, rp: SvdRegisterProperties): SvdCluster =
+func parseCluster(cNode: XmlNode): SvdCluster =
   assert cNode.tag == "cluster"
   result = new(SvdCluster)
 
@@ -183,13 +174,12 @@ func parseCluster(cNode: XmlNode, rp: SvdRegisterProperties): SvdCluster =
   result.description = cNode.getChildTextOpt("description")
   result.headerStructName = cNode.getChildTextOpt("headerStructName")
   result.addressOffset = cNode.child("addressOffset").innerText.parseHexOrDecInt.Natural
-
-  let clusterRp = cNode.updateRegisterProperties(rp)
+  result.registerProperties = cNode.parseRegisterProperties
 
   for childClusterNode in cNode.findAllDirect("cluster"):
-    result.clusters.add childClusterNode.parseCluster(clusterRp)
+    result.clusters.add childClusterNode.parseCluster()
   for registerNode in cNode.findAllDirect("register"):
-    result.registers.add registerNode.parseRegister(clusterRp)
+    result.registers.add registerNode.parseRegister()
 
 func setAllTypeNames(c: var SvdCluster, parentTypeName: string) =
   c.nimTypeName = c.headerStructName.get(c.name)
@@ -203,7 +193,7 @@ func setAllTypeNames(p: var SvdPeripheral) =
   for reg in p.registers.mitems:
     reg.nimTypeName = p.nimTypeName & "_" & reg.name
 
-func parsePeripheral(pNode: XmlNode, rp: SvdRegisterProperties): SvdPeripheral =
+func parsePeripheral(pNode: XmlNode): SvdPeripheral =
   assert pNode.tag == "peripheral"
   result = new(SvdPeripheral)
 
@@ -214,8 +204,7 @@ func parsePeripheral(pNode: XmlNode, rp: SvdRegisterProperties): SvdPeripheral =
   result.appendToName = pNode.getChildTextOpt("appendToName")
   result.prependToName = pNode.getChildTextOpt("prependToName")
   result.headerStructName = pNode.getChildTextOpt("headerStructName")
-
-  let periphRp = pNode.updateRegisterProperties(rp)
+  result.registerProperties = pNode.parseRegisterProperties
 
   for intNode in pNode.findAllDirect("interrupt"):
     result.interrupts.add SvdInterrupt(
@@ -227,9 +216,9 @@ func parsePeripheral(pNode: XmlNode, rp: SvdRegisterProperties): SvdPeripheral =
   let registersNode = pNode.child("registers")
   if not isNil(registersNode):
     for clusterNode in registersNode.findAllDirect("cluster"):
-      result.clusters.add clusterNode.parseCluster(periphRp)
+      result.clusters.add clusterNode.parseCluster()
     for registerNode in registersNode.findAllDirect("register"):
-      result.registers.add registerNode.parseRegister(periphRp)
+      result.registers.add registerNode.parseRegister()
 
   result.setAllTypeNames()
 
@@ -242,9 +231,6 @@ proc readSVD*(path: string): SvdDevice =
     xml = path.loadXml()
     deviceName = xml.child("name").getText()
     deviceDescription = xml.child("description").getText().strip()
-    defaultRegProps = xml.updateRegisterProperties(
-      SvdRegisterProperties(access: raReadWrite, size: 32)
-      )
 
   #TODO: Does the schema allow multiple license texts?
   var licenseTexts = xml.findAll("licenseText")
@@ -268,6 +254,8 @@ proc readSVD*(path: string): SvdDevice =
     licenseBlock: licenseBlock
   )
 
+  result.registerProperties = xml.parseRegisterProperties()
+
   var cpuNode = xml.child("cpu")
   result.cpu = SvdCpu(
     name: cpuNode.child("name").getText(),
@@ -280,7 +268,7 @@ proc readSVD*(path: string): SvdDevice =
   )
 
   for pNode in xml.child("peripherals").findAllDirect("peripheral"):
-    result.peripherals.add pNode.parsePeripheral(defaultRegProps)
+    result.peripherals.add pNode.parsePeripheral()
 
   # Expand derivedFrom entities in peripherals and their children
   expandDerives result.peripherals

@@ -1,4 +1,5 @@
 import typedefs
+import basetypes
 import strformat
 import utils
 
@@ -12,6 +13,8 @@ proc renderType*(typ: CodeGenTypeDef, tg: File) =
   for f in typ.fields:
     let
       fstar = if f.public: "*" else: ""
-      fname = f.name.sanitizeIdent
-      fieldTypeName = f.typeName.sanitizeIdent
-    tg.writeLine(Indent & fmt"{fName}{fstar}: {fieldTypeName}")
+      fname = f.name.stripPlaceHolder.sanitizeIdent
+    tg.writeLine(Indent & fmt"{fName}{fstar}: {f.typeName}")
+
+proc renderPeripheral*(p: SvdPeripheral, tg: File) =
+  discard

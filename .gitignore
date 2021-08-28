@@ -5,3 +5,4 @@ build/
 
 scratch.nim
 atsamd*.*
+arm_example.*

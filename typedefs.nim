@@ -4,6 +4,7 @@ import entities
 import sequtils
 import tables
 import algorithm
+import strformat
 
 type TypeDefField* = object
   name*: string
@@ -47,6 +48,18 @@ proc cmpAddrOffset(a, b: SvdEntity): int =
     of sePeripheral: doAssert false
   return cmp(aOffset, bOffset)
 
+func isDimArray(e: SvdEntity): bool =
+  case e.kind
+  of sePeripheral: e.periph.isDimArray
+  of seCluster: e.cluster.isDimArray
+  of seRegister: e.register.isDimArray
+
+func getDimGroup(e: SvdEntity): SvdDimElementGroup =
+  case e.kind
+  of sePeripheral: e.periph.dimGroup
+  of seCluster: e.cluster.dimGroup
+  of seRegister: e.register.dimGroup
+
 func updateProperties(parent, child: SvdRegisterProperties): SvdRegisterProperties =
   # Create a new RegisterProperties instance by update parent fields with child
   # fields if they are some.
@@ -60,19 +73,19 @@ func getTypeFields(
   rp: SvdRegisterProperties): seq[TypeDefField] =
 
   case n.kind:
-  of sePeripheral:
+  of {sePeripheral, seCluster}:
     for cNode in children.sorted(cmpAddrOffset):
+      let typeName =
+        if cNode.isDimArray:
+          let dim = cNode.getDimGroup.dim.get
+          fmt"array[{dim}, {cNode.getNimTypeName}]"
+        else:
+          cNode.getNimTypeName
+
       result.add TypeDefField(
         name: cNode.getName,
         public: true,
-        typeName: cNode.getNimTypeName,
-      )
-  of seCluster:
-    for cNode in children.sorted(cmpAddrOffset):
-      result.add TypeDefField(
-        name: cNode.getName,
-        public: true,
-        typeName: cNode.getNimTypeName
+        typeName: typeName,
       )
   of seRegister:
     # Registers have a single (private) field, the pointer

@@ -1,4 +1,5 @@
 import options
+import strutils
 export options
 
 type SvdBitrange* = tuple
@@ -114,9 +115,21 @@ type
     cpu*: SvdCpu
     registerProperties*: SvdRegisterProperties
 
+# Any SVD entity that supports dimElementGroup
+type SomeSvdDimable* = SvdPeripheral | SvdCluster | SvdRegister | SvdField
+
 type
   SVDError* = object of CatchableError ## \
     ## Raised when SVD file does not meet the SVD spec
 
   NotImplementedError* = object of CatchableError ## \
     ## Raised when a feature of the SVD spec is not implemened by this program
+
+func isDimList*[T: SomeSvdDimable](e: T): bool =
+  e.dimGroup.dim.isSome and not e.name.endsWith("[%s]")
+
+func isDimArray*[T: SomeSvdDimable](e: T): bool =
+  e.dimGroup.dim.isSome and e.name.endsWith("[%s]")
+
+func getDimGroup[T: SomeSvdDimable](e: T): SvdDimElementGroup =
+  e.dimGroup

@@ -113,6 +113,9 @@ func parseDimElementGroup(n: XmlNode): SvdDimElementGroup =
   result.dimName = n.getChildTextOpt("dimName")
   #result.dimIndex = n.getChildTextOpt("dimArrayIndex")
 
+  if result.dim.isSome and result.dimIncrement.isNone:
+    raise newException(SVDError, "Node has dim but no dimIncrement")
+
 func parseField(fNode: XmlNode): SvdField =
   assert fNode.tag == "field"
   result.name = fNode.child("name").innerText

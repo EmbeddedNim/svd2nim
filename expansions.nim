@@ -1,4 +1,4 @@
-import types
+import basetypes
 import tables
 import sets
 import hashes
@@ -52,6 +52,8 @@ proc expandDerives*(periphs: var seq[SvdPeripheral]) =
 
     let parentEntity = entityTable[parentName]
     doAssert parentEntity.kind == n.kind
+    doAssert not parentEntity.isDerived # Support for chained derivations not impplemented
+                                        # Would require more fancy topological sorting
 
     case n.kind:
     of sePeripheral:

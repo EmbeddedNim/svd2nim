@@ -7,7 +7,7 @@
 ]#
 
 import sets
-import types
+import basetypes
 import tables
 import hashes
 import sequtils

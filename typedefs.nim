@@ -1,5 +1,5 @@
 # Generate object type definitions to be written in nim code output
-import types
+import basetypes
 import entities
 import sequtils
 import tables
@@ -65,15 +65,15 @@ func getTypeFields(
       result.add TypeDefField(
         name: cNode.getName,
         public: true,
-        typeName: cNode.getNimTypeName
-        )
+        typeName: cNode.getNimTypeName,
+      )
   of seCluster:
     for cNode in children.sorted(cmpAddrOffset):
       result.add TypeDefField(
         name: cNode.getName,
         public: true,
         typeName: cNode.getNimTypeName
-        )
+      )
   of seRegister:
     # Registers have a single (private) field, the pointer
     result.add TypeDefField(
@@ -106,7 +106,7 @@ func createTypeDefs*(dev: SvdDevice): OrderedTable[string, CodeGenTypeDef] =
 
     if tname notin result:
       result[tname] = CodeGenTypeDef(
-        name: tName,
+        name: tname,
         public: false,
         fields: n.getTypeFields(children, newRp)
       )

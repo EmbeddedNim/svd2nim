@@ -1,6 +1,6 @@
 import unittest
 import svdparser
-import types
+import basetypes
 
 # Some utility functions
 

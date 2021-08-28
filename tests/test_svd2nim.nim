@@ -1,7 +1,7 @@
 when false:
   import unittest
   import svd2nim
-  import types
+  import basetypes
 
   suite "general tests":
 

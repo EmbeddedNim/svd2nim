@@ -4,10 +4,12 @@ import xmltree
 import options
 import strtabs
 import regex
-import svdexceptions
 import expansions
-import types
+import basetypes
 import strformat
+import utils
+
+const typeSuffix  = "_Type"
 
 ###############################################################################
 # Private Procedures
@@ -181,17 +183,41 @@ func parseCluster(cNode: XmlNode): SvdCluster =
   for registerNode in cNode.findAllDirect("register"):
     result.registers.add registerNode.parseRegister()
 
+func appendTypeName(parentName: string, name: string): string =
+  if parentName.endsWith(typeSuffix):
+    result = result & parentName[0 .. ^(typeSuffix.len+1)]
+  else:
+    result = result & parentName
+  result = result & "_" & name
+
+func buildTypeName(p: SvdPeripheral): string =
+  if p.headerStructName.isSome:
+    result = p.headerStructName.get
+  else:
+    result = p.name.stripPlaceHolder
+  result = result & typeSuffix
+
+func buildTypeName(c: SvdCluster, parentTypeName: string): string =
+  if c.headerStructName.isSome:
+    result = c.headerStructName.get
+  else:
+    result = appendTypeName(parentTypeName, c.name.stripPlaceHolder)
+  result = result & typeSuffix
+
+func buildTypeName(r: SvdRegister, parentTypeName: string): string =
+  result = appendTypeName(parentTypeName, r.name.stripPlaceHolder) & typeSuffix
+
 func setAllTypeNames(c: var SvdCluster, parentTypeName: string) =
-  c.nimTypeName = c.headerStructName.get(c.name)
+  c.nimTypeName = buildTypeName(c, parentTypeName)
   for child in c.clusters.mitems: child.setAllTypeNames(c.nimTypeName)
   for reg in c.registers.mitems:
-    reg.nimTypeName = c.nimTypeName & "_" & reg.name
+    reg.nimTypeName = buildTypeName(reg, c.nimTypeName)
 
 func setAllTypeNames(p: var SvdPeripheral) =
-  p.nimTypeName = p.headerStructName.get(p.name)
+  p.nimTypeName = buildTypeName(p)
   for c in p.clusters.mitems: c.setAllTypeNames(p.nimTypeName)
   for reg in p.registers.mitems:
-    reg.nimTypeName = p.nimTypeName & "_" & reg.name
+    reg.nimTypeName = buildTypeName(reg, p.nimTypeName)
 
 func parsePeripheral(pNode: XmlNode): SvdPeripheral =
   assert pNode.tag == "peripheral"

@@ -28,6 +28,12 @@ iterator ritems[T](s: seq[T]): T =
   for i in countdown(s.high, s.low):
     yield s[i]
 
+func updateDimGroup(base: SvdDimElementGroup, with: SvdDimElementGroup): SvdDimElementGroup =
+  result = base
+  if result.dim.isNone: result.dim = with.dim
+  if result.dimIncrement.isNone: result.dimIncrement = with.dimIncrement
+  if result.dimName.isNone: result.dimName = with.dimName
+
 proc expandDerives*(periphs: var seq[SvdPeripheral]) =
   # Expand entities that are derivedFrom by copying relevant fields.
   let
@@ -68,6 +74,8 @@ proc expandDerives*(periphs: var seq[SvdPeripheral]) =
       if p.registerProperties.access.isNone:
         p.registerProperties.access = parent.registerProperties.access
 
+      p.dimGroup = updateDimGroup(p.dimGroup, parent.dimGroup)
+
       # No support for derived items that redefine children clusters/peripherals
       # Otherwise we need to define a new type. Current implementation reuses parent type
       doAssert p.registers.len == 0
@@ -91,6 +99,8 @@ proc expandDerives*(periphs: var seq[SvdPeripheral]) =
       if c.registerProperties.access.isNone:
         c.registerProperties.access = parent.registerProperties.access
 
+      c.dimGroup = updateDimGroup(c.dimGroup, parent.dimGroup)
+
       # No support for derived items that redefine children clusters/peripherals
       # Otherwise we need to define a new type. Current implementation reuses parent type
       doAssert c.registers.len == 0
@@ -108,8 +118,11 @@ proc expandDerives*(periphs: var seq[SvdPeripheral]) =
       if r.properties.access.isNone:
         r.properties.access = parent.properties.access
 
+      r.dimGroup = updateDimGroup(r.dimGroup, parent.dimGroup)
+
       # See above note. Currently, derived registers that redefine fields are
       # not supported. Would need to define a new type.
       doAssert r.fields.len == 0
       r.fields = parent.fields.deepCopy
       r.nimTypeName = parent.nimTypeName
+

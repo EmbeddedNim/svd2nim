@@ -11,6 +11,14 @@ type SvdFieldEnum* = object
   headerEnumName*: Option[string]
   values*: seq[tuple[name: string, val: int]]
 
+type SvdDimElementGroup* = object
+  dim*: Option[Natural]
+  dimIncrement*: Option[Natural]
+  # TODO: Implement support for dimIndex and dimArrayIndex
+  #dimIndex*: Option[string]
+  dimName*: Option[string]
+  #dimArrayIndex*: Option[string]
+
 type SvdField* = object
   # https://arm-software.github.io/CMSIS_5/SVD/html/elem_registers.html#elem_field
   name*: string
@@ -18,6 +26,7 @@ type SvdField* = object
   description*: Option[string]
   bitRange*: SvdBitrange
   enumValues*: Option[SvdFieldEnum]
+  dimGroup*: SvdDimElementGroup
 
 type SvdRegisterAccess* = enum
   raReadOnly
@@ -44,6 +53,7 @@ type SvdRegister* = ref object
   properties*: SvdRegisterProperties
   fields*: seq[SvdField]
   nimTypeName*: string
+  dimGroup*: SvdDimElementGroup
 
 type SvdCluster* {.acyclic.} = ref object
   # https://arm-software.github.io/CMSIS_5/SVD/html/elem_registers.html#elem_cluster
@@ -56,6 +66,7 @@ type SvdCluster* {.acyclic.} = ref object
   clusters*: seq[SvdCluster]
   nimTypeName*: string
   registerProperties*: SvdRegisterProperties
+  dimGroup*: SvdDimElementGroup
 
 type SvdInterrupt* = object
   name*: string
@@ -76,6 +87,7 @@ type SvdPeripheral* = ref object
   interrupts*: seq[SvdInterrupt]
   nimTypeName*: string
   registerProperties*: SvdRegisterProperties
+  dimGroup*: SvdDimElementGroup
 
 type
   SvdDeviceMetadata* = ref object

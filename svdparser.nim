@@ -26,7 +26,7 @@ proc formatText(text: string): string =
   return ftext
 
 func parseHexOrDecInt(s: string) : int =
-  # Parse string to integer. According to CMSIS spect, if the string
+  # Parse string to integer. According to CMSIS spec, if the string
   # starts with 0X or 0x it is to be interpreted as hexadecimal.
   # TODO: Implementing parsing binary if string starts with #
   if s.toLower().startsWith("0x"):
@@ -106,6 +106,13 @@ func parseFieldEnum(eNode: XmlNode): SvdFieldEnum =
       val = valueNode.innerText.parseHexOrDecInt
     result.values.add (name: name, val: val)
 
+func parseDimElementGroup(n: XmlNode): SvdDimElementGroup =
+  result.dim = n.getChildNaturalOpt("dim")
+  result.dimIncrement = n.getChildNaturalOpt("dimIncrement")
+  #result.dimIndex = n.getChildTextOpt("dimIndex")
+  result.dimName = n.getChildTextOpt("dimName")
+  #result.dimIndex = n.getChildTextOpt("dimArrayIndex")
+
 func parseField(fNode: XmlNode): SvdField =
   assert fNode.tag == "field"
   result.name = fNode.child("name").innerText
@@ -152,6 +159,8 @@ func parseField(fNode: XmlNode): SvdField =
   else:
     result.enumValues = none(SvdFieldEnum)
 
+  result.dimGroup = fNode.parseDimElementGroup()
+
 func parseRegister(rNode: XmlNode): SvdRegister =
   assert rNode.tag == "register"
   result = new(SvdRegister)
@@ -166,6 +175,8 @@ func parseRegister(rNode: XmlNode): SvdRegister =
   if not isNil(fieldsTag):
     for fieldNode in fieldsTag.findAllDirect("field"):
       result.fields.add fieldNode.parseField
+
+  result.dimGroup = rNode.parseDimElementGroup()
 
 func parseCluster(cNode: XmlNode): SvdCluster =
   assert cNode.tag == "cluster"
@@ -183,6 +194,8 @@ func parseCluster(cNode: XmlNode): SvdCluster =
   for registerNode in cNode.findAllDirect("register"):
     result.registers.add registerNode.parseRegister()
 
+  result.dimGroup = cNode.parseDimElementGroup()
+
 func appendTypeName(parentName: string, name: string): string =
   if parentName.endsWith(typeSuffix):
     result = result & parentName[0 .. ^(typeSuffix.len+1)]
@@ -191,21 +204,28 @@ func appendTypeName(parentName: string, name: string): string =
   result = result & "_" & name
 
 func buildTypeName(p: SvdPeripheral): string =
-  if p.headerStructName.isSome:
+  if p.dimGroup.dimName.isSome:
+    result = p.dimGroup.dimName.get
+  elif p.headerStructName.isSome:
     result = p.headerStructName.get
   else:
     result = p.name.stripPlaceHolder
   result = result & typeSuffix
 
 func buildTypeName(c: SvdCluster, parentTypeName: string): string =
-  if c.headerStructName.isSome:
+  if c.dimGroup.dimName.isSome:
+    result = c.dimGroup.dimName.get
+  elif c.headerStructName.isSome:
     result = c.headerStructName.get
   else:
     result = appendTypeName(parentTypeName, c.name.stripPlaceHolder)
   result = result & typeSuffix
 
 func buildTypeName(r: SvdRegister, parentTypeName: string): string =
-  result = appendTypeName(parentTypeName, r.name.stripPlaceHolder) & typeSuffix
+  if r.dimGroup.dimName.isSome:
+    result = r.dimGroup.dimName.get
+  else:
+    result = appendTypeName(parentTypeName, r.name.stripPlaceHolder) & typeSuffix
 
 func setAllTypeNames(c: var SvdCluster, parentTypeName: string) =
   c.nimTypeName = buildTypeName(c, parentTypeName)
@@ -246,6 +266,7 @@ func parsePeripheral(pNode: XmlNode): SvdPeripheral =
     for registerNode in registersNode.findAllDirect("register"):
       result.registers.add registerNode.parseRegister()
 
+  result.dimGroup = pNode.parseDimElementGroup()
   result.setAllTypeNames()
 
 ###############################################################################

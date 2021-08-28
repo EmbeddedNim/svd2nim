@@ -203,3 +203,24 @@ suite "Parser Tests":
 
       pmux1.properties.size == pmux0.properties.size
       pmux1.properties.access == pmux0.properties.access
+
+  test "Parse dimElementGroup":
+    let
+      timer0 = device.getPeriphByName("TIMER0")
+      reload = timer0.findRegisterByName("RELOAD[%s]")
+
+      ac = samd21.getPeriphByName("AC")
+      compctrl = ac.findRegisterByName("COMPCTRL%s")
+
+      port = samd21.getPeriphByName("PORT")
+      pmux1 = port.findRegisterByName("PMUX1_%s")
+
+    check:
+      reload.dimGroup.dim.get == 4
+      reload.dimGroup.dimIncrement.get == 4
+
+      compctrl.dimGroup.dim.get == 2
+      compctrl.dimGroup.dimIncrement.get == 0x4
+
+      pmux1.dimGroup.dim.get == 16
+      pmux1.dimGroup.dimIncrement.get == 0x1

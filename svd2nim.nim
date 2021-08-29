@@ -168,6 +168,10 @@ proc renderDevice(d: SvdDevice, outf: File) =
     t.renderType(outf)
     outf.writeLine("")
 
+  renderHeader("# Peripheral object instances", outf)
+  for periph in d.peripherals:
+    renderPeripheral(periph, outf)
+
   renderTemplates(outf)
 
 proc renderStartup(d: SvdDevice, outf: File) =

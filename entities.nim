@@ -121,3 +121,47 @@ func buildEntityGraph*(periphs: seq[SvdPeripheral]): SvdGraph =
         stack.add regNode
     of seRegister:
       discard # No children to add
+
+proc cmpAddrOffset*(a, b: SvdEntity): int =
+  # Compare address offset
+  # Note: Peripherals don't have offsets, only base absolute addresses
+  var aOffset, bOffset: int
+  case a.kind:
+    of seCluster: aOffset = a.cluster.addressOffset
+    of seRegister: aOffset = a.register.addressOffset
+    of sePeripheral: doAssert false
+  case b.kind:
+    of seCluster: bOffset = b.cluster.addressOffset
+    of seRegister: bOffset = b.register.addressOffset
+    of sePeripheral: doAssert false
+  return cmp(aOffset, bOffset)
+
+func getNimTypeName*(n: SvdEntity): string =
+  case n.kind:
+  of sePeripheral: n.periph.nimTypeName
+  of seCluster: n.cluster.nimTypeName
+  of seRegister: n.register.nimTypeName
+
+func getName*(node: SvdEntity): string =
+  result = case node.kind:
+    of sePeripheral: node.periph.name
+    of seRegister: node.register.name
+    of seCluster: node.cluster.name
+
+func getRegisterProperties*(n: SvdEntity): SvdRegisterProperties =
+  case n.kind:
+  of sePeripheral: n.periph.registerProperties
+  of seCluster: n.cluster.registerProperties
+  of seRegister: n.register.properties
+
+func isDimArray*(e: SvdEntity): bool =
+  case e.kind
+  of sePeripheral: e.periph.isDimArray
+  of seCluster: e.cluster.isDimArray
+  of seRegister: e.register.isDimArray
+
+func getDimGroup*(e: SvdEntity): SvdDimElementGroup =
+  case e.kind
+  of sePeripheral: e.periph.dimGroup
+  of seCluster: e.cluster.dimGroup
+  of seRegister: e.register.dimGroup

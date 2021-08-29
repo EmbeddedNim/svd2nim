@@ -133,3 +133,10 @@ func isDimArray*[T: SomeSvdDimable](e: T): bool =
 
 func getDimGroup[T: SomeSvdDimable](e: T): SvdDimElementGroup =
   e.dimGroup
+
+func updateProperties*(parent, child: SvdRegisterProperties): SvdRegisterProperties =
+  # Create a new RegisterProperties instance by update parent fields with child
+  # fields if they are some.
+  result = parent
+  if child.size.isSome: result.size = child.size
+  if child.access.isSome: result.access = child.access

@@ -4,7 +4,6 @@ import xmltree
 import options
 import strtabs
 import regex
-import expansions
 import basetypes
 import strformat
 import utils
@@ -319,9 +318,6 @@ proc readSVD*(path: string): SvdDevice =
 
   for pNode in xml.child("peripherals").findAllDirect("peripheral"):
     result.peripherals.add pNode.parsePeripheral()
-
-  # Expand derivedFrom entities in peripherals and their children
-  expandDerives result.peripherals
 
 export options
 

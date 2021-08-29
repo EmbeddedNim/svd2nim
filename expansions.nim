@@ -3,6 +3,7 @@ import tables
 import sets
 import hashes
 import strutils
+import sequtils
 import entities
 
 func isDerived(n: SvdEntity): bool =
@@ -125,4 +126,65 @@ proc expandDerives*(periphs: var seq[SvdPeripheral]) =
       doAssert r.fields.len == 0
       r.fields = parent.fields.deepCopy
       r.nimTypeName = parent.nimTypeName
+
+func expandDimList[T: SvdCluster | SvdRegister](e: T): seq[T] =
+  if not e.isDimList: return @[e]
+
+  if e.dimGroup.dimIncrement.isNone:
+    raise newException(SVDError, e.name & " has dim but no dimIncrement")
+  let dIncr = e.dimGroup.dimIncrement.get
+
+  let dimIndex = toSeq(0 .. e.dimGroup.dim.get).mapIt($it)
+  for i in 0..dimIndex.high:
+    let idxName = dimIndex[i]
+    var newElem: T
+    deepCopy(newElem, e)
+    newElem.name = e.name.replace("%s", idxName)
+    debugEcho "Old name: " & e.name
+    debugEcho "New name: " & newElem.name
+    newElem.addressOffset.inc (dIncr * i)
+    result.add newElem
+
+func expandDimList(e: SvdPeripheral): seq[SvdPeripheral] =
+  if not e.isDimList: return @[e]
+  let
+    dIncr = e.dimGroup.dimIncrement.get
+    dimIndex = toSeq(0 .. e.dimGroup.dim.get).mapIt($it)
+  for i in dimIndex:
+    var newElem: SvdPeripheral
+    deepCopy(newElem, e)
+    newElem.name = e.name.replace("%s", i)
+    newElem.baseAddress.inc dIncr
+    result.add newElem
+
+func expandClusterChildren(cluster: SvdCluster): SvdCluster =
+  result = deepCopy(cluster)
+  result.registers = @[]
+  result.clusters = @[]
+
+  for reg in cluster.registers:
+    result.registers.add reg.expandDimList
+
+  for child in cluster.clusters:
+    result.clusters.add map(child.expandDimList, expandClusterChildren)
+
+func expandAllDimLists*(peripherals: seq[SvdPeripheral]): seq[SvdPeripheral] =
+  for p in peripherals:
+    result.add p.expandDimList
+
+  # TODO: Possible optimization: expand deepest elements first, so they don't
+  # have to be re-expanded in copies of parents. Ie, Fields, then Registers,
+  # then Clusters (nested), finallly Peripherals.
+  # Here we do top-first for code simplicity.
+
+  for p in result:
+    var expRegisters: seq[SvdRegister]
+    for reg in p.registers:
+      expRegisters.add reg.expandDimList
+    p.registers = expRegisters
+
+    var expClusters: seq[SvdCluster]
+    for cl in p.clusters:
+      expClusters.add map(cl.expandDimList, expandClusterChildren)
+    p.clusters = expClusters
 

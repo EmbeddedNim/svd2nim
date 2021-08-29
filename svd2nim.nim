@@ -17,6 +17,7 @@ import basetypes
 import svdparser
 import typedefs
 import codegen
+import expansions
 
 ###############################################################################
 # Register generation from SVD
@@ -295,6 +296,17 @@ proc updateSVD() =
   z.extractAll(dest)
   z.close()
 
+proc processSvd(path: string): SvdDevice =
+  # Parse SVD file and apply some post-processing
+  result = readSVD(path)
+
+  # Expand derivedFrom entities in peripherals and their children
+  expandDerives result.peripherals
+
+  # Expand dim lists
+  # Note: dim arrays are expanded at codegen time
+  result.peripherals = expandAllDimLists(result.peripherals)
+
 ###############################################################################
 # Main
 ###############################################################################
@@ -326,7 +338,7 @@ proc main() =
     if args["--updatePatched"]:
       updatePatchedSVD()
   if args.contains("<svdFile>"):
-    let dev = readSVD($args["<svdFile>"])
+    let dev = processSvd($args["<svdFile>"])
 
     var outf = open(dev.metadata.name.toLower() & ".nim",fmWrite)
     renderDevice(dev, outf)

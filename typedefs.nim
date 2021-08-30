@@ -59,7 +59,7 @@ func createTypeDefs*(dev: SvdDevice): OrderedTable[string, CodeGenTypeDef] =
       dev.registerProperties.updateProperties(pNode.periph.registerProperties)
     )
 
-  while stack.len > 1:
+  while stack.len > 0:
     let
       (n, rp) = stack.pop
       newRp = rp.updateProperties(n.getRegisterProperties)

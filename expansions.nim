@@ -140,8 +140,6 @@ func expandDimList[T: SvdCluster | SvdRegister](e: T): seq[T] =
     var newElem: T
     deepCopy(newElem, e)
     newElem.name = e.name.replace("%s", idxName)
-    debugEcho "Old name: " & e.name
-    debugEcho "New name: " & newElem.name
     newElem.addressOffset.inc (dIncr * i)
     result.add newElem
 

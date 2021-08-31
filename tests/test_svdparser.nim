@@ -79,33 +79,23 @@ suite "Parser Tests":
       regCR.derivedFrom.isNone
       regCR.fields.len == 12
 
-  test "Register properties inherited":
+  test "Parse field enum":
     let
       timer0 = device.getPeriphByName("TIMER0")
-      #cr = timer0.registers[0]
-      sr = timer0.registers[1]
-      #regInt = timer0.registers[2]
-      #count = timer0.registers[3]
-      #match = timer0.registers[4]
-      prescale_rd = timer0.registers[5]
-      prescale_wr = timer0.registers[6]
-      #reload = timer0.registers[7]
+      cr = timer0.registers[0]
+      mode = cr.fields[3]
+      mode_enum: SvdFieldEnum = mode.enumValues.get
 
     check:
-      device.registerProperties.size.get == 32
-      device.registerProperties.access.get == raReadWrite
-
-      timer0.registerProperties.size.get == 32
-      timer0.registerProperties.access.get == raReadWrite
-
-      sr.properties.size.get == 16
-      sr.properties.access.get == raReadWrite
-
-      prescale_rd.properties.size.get == 32
-      prescale_rd.properties.access.get == raReadOnly
-
-      prescale_wr.properties.size.get == 32
-      prescale_wr.properties.access.get == raWriteOnly
+      mode.name == "MODE"
+      mode_enum.name.isNone
+      mode_enum.headerEnumName.isNone
+      mode_enum.values.len == 5
+      mode_enum.values[0] == (name: "Continous", val: 0)
+      mode_enum.values[1] == (name: "Single_ZERO_MAX", val: 1)
+      mode_enum.values[2] == (name: "Single_MATCH", val: 2)
+      mode_enum.values[3] == (name: "Reload_ZERO_MAX", val: 3)
+      mode_enum.values[4] == (name: "Reload_MATCH", val: 4)
 
   test "Parse field data":
     let
@@ -126,24 +116,6 @@ suite "Parser Tests":
       wstate0.description.get == "Window 0 Current State"
       wstate0.derivedFrom.isNone
       wstate0.bitRange == (lsb: 4.Natural, msb: 5.Natural)
-
-  test "Parse field enum":
-    let
-      timer0 = device.getPeriphByName("TIMER0")
-      cr = timer0.registers[0]
-      mode = cr.fields[3]
-      mode_enum: SvdFieldEnum = mode.enumValues.get
-
-    check:
-      mode.name == "MODE"
-      mode_enum.name.isNone
-      mode_enum.headerEnumName.isNone
-      mode_enum.values.len == 5
-      mode_enum.values[0] == (name: "Continous", val: 0)
-      mode_enum.values[1] == (name: "Single_ZERO_MAX", val: 1)
-      mode_enum.values[2] == (name: "Single_MATCH", val: 2)
-      mode_enum.values[3] == (name: "Reload_ZERO_MAX", val: 3)
-      mode_enum.values[4] == (name: "Reload_MATCH", val: 4)
 
   test "Parse interrupts":
     let
@@ -168,41 +140,6 @@ suite "Parser Tests":
       timer2.interrupts[0].description.get == "Timer 2 interrupt"
       timer2.interrupts[0].value == 6
 
-  test "Peripheral derived":
-    let
-      timer0 = device.getPeriphByName("TIMER0")
-      timer1 = device.getPeriphByName("TIMER1")
-      timer2 = device.getPeriphByName("TIMER2")
-      port_iobus = samd21.getPeriphByName("PORT_IOBUS")
-
-    check:
-      timer1.baseAddress == 0x40010100
-      timer1.interrupts.len == 1
-      timer1.interrupts[0].name == "TIMER1"
-      timer1.registers.len == timer0.registers.len
-      timer1.nimTypeName == timer0.nimTypeName
-
-      timer2.baseAddress == 0x40010200
-      timer2.interrupts.len == 1
-      timer2.interrupts[0].name == "TIMER2"
-      timer2.registers.len == timer0.registers.len
-      timer2.nimTypeName == timer0.nimTypeName
-
-      port_iobus.prependToName.get == "PORT_IOBUS_"
-
-  test "Register derived":
-    let
-      port = samd21.getPeriphByName("PORT")
-      pmux1 = port.findRegisterByName("PMUX1_%s")
-      pmux0 = port.findRegisterByName("PMUX0_%s")
-
-    check:
-      pmux1.fields.len == pmux0.fields.len
-      pmux1.nimTypeName == pmux0.nimTypeName
-      pmux1.addressOffset == 0xb0
-
-      pmux1.properties.size == pmux0.properties.size
-      pmux1.properties.access == pmux0.properties.access
 
   test "Parse dimElementGroup":
     let

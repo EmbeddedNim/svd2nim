@@ -3,7 +3,7 @@ import typedefs
 import svdparser
 import tables
 
-suite "Parser Tests":
+suite "Create codegen typedefs":
   setup:
     let
       device {.used.} = readSVD("./tests/ARM_Example.svd")

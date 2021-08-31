@@ -124,3 +124,10 @@ proc renderPeripheral*(p: SvdPeripheral, tg: File) =
     tg.writeLine(fmt"let {insName}* = {p.nimTypeName}(")
     renderFields(p, p.baseAddress, 1, p.registerProperties, tg)
     tg.write(")\n\n")
+
+proc renderEnum*(en: CodeGenEnumDef, tg: File) =
+  let star = if en.public: "*" else: ""
+  tg.writeLine(fmt"type {en.name}{star} {{.pure.}} = enum")
+  for (k, v) in en.fields:
+    tg.writeLine(fmt"{Indent}{k} = {v:#x},")
+  tg.write "\n"

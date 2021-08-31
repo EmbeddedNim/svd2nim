@@ -173,6 +173,11 @@ proc renderDevice(d: SvdDevice, outf: File) =
   for periph in d.peripherals:
     renderPeripheral(periph, outf)
 
+  renderHeader("# Accessors for peripheral registers", outf)
+  for periph in d.peripherals:
+    for en in periph.createFieldEnums.values:
+      renderEnum(en, outf)
+
   renderTemplates(outf)
 
 proc renderStartup(d: SvdDevice, outf: File) =

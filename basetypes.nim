@@ -140,3 +140,15 @@ func updateProperties*(parent, child: SvdRegisterProperties): SvdRegisterPropert
   result = parent
   if child.size.isSome: result.size = child.size
   if child.access.isSome: result.access = child.access
+
+iterator allRegisters*(p: SvdPeripheral): SvdRegister =
+  for r in p.registers:
+    yield r
+
+  var clusterStack: seq[SvdCluster]
+  for c in p.clusters: clusterStack.add c
+  while clusterStack.len > 0:
+    let c = clusterStack.pop
+    for r in c.registers:
+      yield r
+    for child in c.clusters: clusterStack.add child

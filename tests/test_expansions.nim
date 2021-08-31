@@ -2,27 +2,7 @@ import unittest
 import svdparser
 import expansions
 import basetypes
-
-func getPeriphByName(dev: SvdDevice, name: string): SvdPeripheral =
-  for per in dev.peripherals:
-    if per.name == name: return per
-  raise newException(ValueError, name & " not found")
-
-func findRegisterByName(p: SvdPeripheral, name: string): SvdRegister =
-  for reg in p.registers:
-    if reg.name == name: return reg
-
-  var clusterStack: seq[SvdCluster]
-  for cls in p.clusters:
-    clusterStack.add cls
-  while clusterStack.len > 0:
-    let cls = clusterStack.pop
-    for reg in cls.registers:
-      if reg.name == name: return reg
-    for cc in cls.clusters:
-      clusterStack.add cc
-
-  raise newException(ValueError, name & " not found")
+import utils
 
 func derived(dev: SvdDevice): SvdDevice =
   result = dev.deepCopy

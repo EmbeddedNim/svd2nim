@@ -7,8 +7,7 @@ import regex
 import basetypes
 import strformat
 import utils
-
-const typeSuffix  = "_Type"
+import typedefs
 
 ###############################################################################
 # Private Procedures
@@ -197,31 +196,6 @@ func parseCluster(cNode: XmlNode): SvdCluster =
     result.registers.add registerNode.parseRegister()
 
   result.dimGroup = cNode.parseDimElementGroup()
-
-func appendTypeName(parentName: string, name: string): string =
-  if parentName.endsWith(typeSuffix):
-    result = result & parentName[0 .. ^(typeSuffix.len+1)]
-  else:
-    result = result & parentName
-  result = result & "_" & name
-
-func buildTypeName(p: SvdPeripheral): string =
-  if p.dimGroup.dimName.isSome:
-    result = p.dimGroup.dimName.get
-  elif p.headerStructName.isSome:
-    result = p.headerStructName.get
-  else:
-    result = p.name.stripPlaceHolder
-  result = result & typeSuffix
-
-func buildTypeName(c: SvdCluster, parentTypeName: string): string =
-  if c.dimGroup.dimName.isSome:
-    result = c.dimGroup.dimName.get
-  elif c.headerStructName.isSome:
-    result = c.headerStructName.get
-  else:
-    result = appendTypeName(parentTypeName, c.name.stripPlaceHolder)
-  result = result & typeSuffix
 
 func buildTypeName(r: SvdRegister, parentTypeName: string): string =
   if r.dimGroup.dimName.isSome:

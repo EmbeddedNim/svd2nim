@@ -1,29 +1,7 @@
 import unittest
 import svdparser
 import basetypes
-
-# Some utility functions
-
-func getPeriphByName(dev: SvdDevice, name: string): SvdPeripheral =
-  for per in dev.peripherals:
-    if per.name == name: return per
-  raise newException(ValueError, name & " not found")
-
-func findRegisterByName(p: SvdPeripheral, name: string): SvdRegister =
-  for reg in p.registers:
-    if reg.name == name: return reg
-
-  var clusterStack: seq[SvdCluster]
-  for cls in p.clusters:
-    clusterStack.add cls
-  while clusterStack.len > 0:
-    let cls = clusterStack.pop
-    for reg in cls.registers:
-      if reg.name == name: return reg
-    for cc in cls.clusters:
-      clusterStack.add cc
-
-  raise newException(ValueError, name & " not found")
+import utils
 
 # Test suites
 
@@ -107,6 +85,13 @@ suite "Parser Tests":
       ac = samd21.getPeriphByName("AC")
       statusa = ac.registers[6]
       wstate0 = statusa.fields[2]
+      gclk = samd21.getPeriphByName("GCLK")
+      clkctrl = gclk.registers[2]
+
+      id = clkctrl.fields[0]
+      gen = clkctrl.fields[1]
+      clken = clkctrl.fields[2]
+      wrtlock = clkctrl.fields[3]
 
     check:
       cnt.name == "CNT"
@@ -116,6 +101,15 @@ suite "Parser Tests":
       wstate0.description.get == "Window 0 Current State"
       wstate0.derivedFrom.isNone
       wstate0.bitRange == (lsb: 4.Natural, msb: 5.Natural)
+
+      id.name == "ID"
+      id.bitRange == (lsb: 0.Natural, msb: 5.Natural)
+
+      gen.name == "GEN"
+      gen.bitRange == (lsb: 8.Natural, msb: 11.Natural)
+
+      clken.name == "CLKEN"
+      clken.bitRange == (lsb: 14.Natural, msb: 14.Natural)
 
   test "Parse interrupts":
     let

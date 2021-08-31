@@ -5,6 +5,10 @@ import sequtils
 import tables
 import algorithm
 import strformat
+import strutils
+import utils
+
+const typeSuffix*  = "_Type"
 
 type TypeDefField* = object
   name*: string
@@ -12,9 +16,41 @@ type TypeDefField* = object
   typeName*: string
 
 type CodeGenTypeDef* = ref object
+  # Nim object type definition
   name*: string
   public*: bool
   fields*: seq[TypeDefField]
+
+type CodeGenEnumDef* = object
+  # Nin enum type definition
+  name*: string
+  public*: bool
+  fields*: seq[tuple[key: string, val: int]]
+
+func appendTypeName*(parentName: string, name: string): string =
+  if parentName.endsWith(typeSuffix):
+    result = result & parentName[0 .. ^(typeSuffix.len+1)]
+  else:
+    result = result & parentName
+  result = result & "_" & name
+
+func buildTypeName*(p: SvdPeripheral): string =
+  if p.dimGroup.dimName.isSome:
+    result = p.dimGroup.dimName.get
+  elif p.headerStructName.isSome:
+    result = p.headerStructName.get
+  else:
+    result = p.name.stripPlaceHolder
+  result = result & typeSuffix
+
+func buildTypeName*(c: SvdCluster, parentTypeName: string): string =
+  if c.dimGroup.dimName.isSome:
+    result = c.dimGroup.dimName.get
+  elif c.headerStructName.isSome:
+    result = c.headerStructName.get
+  else:
+    result = appendTypeName(parentTypeName, c.name.stripPlaceHolder)
+  result = result & typeSuffix
 
 func getTypeFields(
   n: SvdEntity,
@@ -75,3 +111,22 @@ func createTypeDefs*(dev: SvdDevice): OrderedTable[string, CodeGenTypeDef] =
 
     for c in children:
       stack.add (c, newRp)
+
+func createFieldEnums*(p: SvdPeripheral): OrderedTable[string, CodeGenEnumDef] =
+  for reg in p.allRegisters:
+    for field in reg.fields:
+      if field.enumValues.isNone: continue
+      let svdEnum = field.enumValues.get
+      var en: CodeGenEnumDef
+      en.public = true
+      en.name =
+        if svdEnum.headerEnumName.isSome:
+          svdEnum.headerEnumName.get
+        else:
+          appendTypeName(reg.nimTypeName, field.name)
+
+      let pos = field.bitRange.lsb
+      for (k, v) in svdEnum.values:
+        en.fields.add (key: k, val: (v shl pos))
+      # TODO: If enum already in table, validate that it is identical
+      result[en.name] = en

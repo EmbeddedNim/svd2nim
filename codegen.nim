@@ -2,6 +2,7 @@ import typedefs
 import basetypes
 import strformat
 import strutils
+import sequtils
 import algorithm
 import utils
 import entities
@@ -23,12 +24,9 @@ proc renderRegister(
   r: SvdRegister,
   numIndent: Natural,
   baseAddress: Natural,
-  baseProps: SvdRegisterProperties,
   tg: File) =
 
-  let
-    rp = updateProperties(baseProps, r.properties)
-    intName = "uint" & $rp.size.get
+  let intName = "uint" & $r.properties.size
 
   if r.isDimArray:
     tg.write("[\n")
@@ -47,14 +45,12 @@ proc renderCluster(
   cluster: SvdCluster,
   numIndent: Natural,
   baseAddress: Natural,
-  baseProps: SvdRegisterProperties,
   tg: File)
 
 proc renderFields[T: SvdCluster | SvdPeripheral](
   p: T,
   baseAddress: Natural,
   numIndent: Natural,
-  baseProps: SvdRegisterProperties,
   tg: File) =
 
   let fields = block:
@@ -72,9 +68,9 @@ proc renderFields[T: SvdCluster | SvdPeripheral](
 
     case f.kind:
     of seRegister:
-      renderRegister(f.register, numIndent, baseAddress, baseProps, tg)
+      renderRegister(f.register, numIndent, baseAddress, tg)
     of seCluster:
-      renderCluster(f.cluster, numIndent, baseAddress, baseProps, tg)
+      renderCluster(f.cluster, numIndent, baseAddress, tg)
     of sePeripheral:
       doAssert false
 
@@ -82,10 +78,7 @@ proc renderCluster(
   cluster: SvdCluster,
   numIndent: Natural,
   baseAddress: Natural,
-  baseProps: SvdRegisterProperties,
   tg: File) =
-
-  let rp = updateProperties(baseProps, cluster.registerProperties)
 
   if cluster.isDimArray:
     # TODO: dim array of clusters has not been tested. Find or create SVD snippet
@@ -97,14 +90,14 @@ proc renderCluster(
                     cluster.addressOffset +
                     arrIndex * (cluster.dimGroup.dimIncrement.get)
       tg.write(fmt"{locIndent}{cluster.nimTypeName}(" & "\n")
-      renderFields(cluster, address, numIndent+2, rp, tg)
+      renderFields(cluster, address, numIndent+2, tg)
       tg.write(locIndent & "),\n")
     tg.write(repeat(Indent, numIndent) & "]\n")
   else:
     let
       address = baseAddress + cluster.addressOffset
     tg.write(fmt"{cluster.nimTypeName}(" & "\n")
-    renderFields(cluster, address, numIndent+1, rp, tg)
+    renderFields(cluster, address, numIndent+1, tg)
     tg.write(repeat(Indent, numIndent) & "),\n")
 
 proc renderPeripheral*(p: SvdPeripheral, tg: File) =
@@ -117,12 +110,12 @@ proc renderPeripheral*(p: SvdPeripheral, tg: File) =
     for arrIndex in 0 ..< (p.dimGroup.dim.get):
       let address = p.baseAddress + arrIndex * p.dimGroup.dimIncrement.get
       tg.write(fmt"{Indent}{p.nimTypeName}(" & "\n")
-      renderFields(p, address, 2, p.registerProperties, tg)
+      renderFields(p, address, 2, tg)
       tg.write(Indent & "),\n")
     tg.write(Indent & "]\n\n")
   else:
     tg.writeLine(fmt"let {insName}* = {p.nimTypeName}(")
-    renderFields(p, p.baseAddress, 1, p.registerProperties, tg)
+    renderFields(p, p.baseAddress, 1, tg)
     tg.write(")\n\n")
 
 proc renderEnum*(en: CodeGenEnumDef, tg: File) =
@@ -131,3 +124,15 @@ proc renderEnum*(en: CodeGenEnumDef, tg: File) =
   for (k, v) in en.fields:
     tg.writeLine(fmt"{Indent}{k} = {v:#x},")
   tg.write "\n"
+
+proc renderProcDef*(prd: CodeGenProcDef, tg: File) =
+  let
+    argString = prd.args.mapIt(it.name & ": " & it.typ).join(", ")
+    retString = if prd.retType.isSome: ": " & prd.retType.get else: ""
+  tg.write(fmt"{prd.keyword} {prd.name}({argString}){retString} =")
+  if prd.body.countLines <= 1:
+    tg.write(" " & prd.body & "\n\n")
+  else:
+    for line in prd.body.splitLines:
+      tg.writeLine Indent & line
+    tg.write "\n"

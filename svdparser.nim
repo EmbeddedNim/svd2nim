@@ -50,22 +50,6 @@ func getChildNaturalOpt(pNode: XmlNode, tag:string): Option[Natural] =
     else:
       return some(text.get().parseHexOrDecInt.Natural)
 
-func parseRegisterProperties(node: XmlNode): SvdRegisterProperties =
-  discard
-  let
-    size = node.getChildNaturalOpt("size")
-    access = node.getChildTextOpt("access")
-
-  result.size = size
-
-  if access.isSome:
-    result.access = case access.get:
-      of "read-write": raReadWrite.some
-      of "read-only": raReadOnly.some
-      of "write-only": raWriteOnly.some
-      of "writeOnce": raWriteOnce.some
-      of "read-writeOnce": raReadWriteOnce.some
-      else: raise newException(SVDError, "Unknown access value: " & access.get)
 
 func attrOpt(n: XmlNode, name: string): Option[string] =
   # Return some(attr_value) if attr exists, otherwise none
@@ -162,7 +146,27 @@ func parseField(fNode: XmlNode): SvdField =
 
   result.dimGroup = fNode.parseDimElementGroup()
 
-func parseRegister(rNode: XmlNode): SvdRegister =
+func updateProperties(parent: SvdRegisterProperties, node: XmlNode): SvdRegisterProperties =
+  # Create a new RegisterProperties instance by update parent fields with child
+  # fields if they are some.
+  result = parent
+
+  let
+    size = node.getChildNaturalOpt("size")
+    access = node.getChildTextOpt("access")
+
+  if size.isSome: result.size = size.get
+
+  if access.isSome:
+    result.access = case access.get:
+      of "read-write": raReadWrite
+      of "read-only": raReadOnly
+      of "write-only": raWriteOnly
+      of "writeOnce": raWriteOnce
+      of "read-writeOnce": raReadWriteOnce
+      else: raise newException(SVDError, "Unknown access value: " & access.get)
+
+func parseRegister(rNode: XmlNode, parentRp: SvdRegisterProperties): SvdRegister =
   assert rNode.tag == "register"
   result = new(SvdRegister)
 
@@ -170,7 +174,10 @@ func parseRegister(rNode: XmlNode): SvdRegister =
   result.derivedFrom = rNode.attrOpt("derivedFrom")
   result.addressOffset = rNode.child("addressOffset").innerText.parseHexOrDecInt.Natural
   result.description = rNode.getChildTextOpt("description")
-  result.properties = rNode.parseRegisterProperties
+  result.properties = updateProperties(parentRp, rNode)
+
+  if result.derivedFrom.isSome and (not rNode.child("size").isNil or not rNode.child("access").isNil):
+    raise newException(SVDError, "Not supported: derived register '" & result.name & "' redefines size or access.")
 
   let fieldsTag = rnode.child("fields")
   if not isNil(fieldsTag):
@@ -179,7 +186,7 @@ func parseRegister(rNode: XmlNode): SvdRegister =
 
   result.dimGroup = rNode.parseDimElementGroup()
 
-func parseCluster(cNode: XmlNode): SvdCluster =
+func parseCluster(cNode: XmlNode, parentRp: SvdRegisterProperties): SvdCluster =
   assert cNode.tag == "cluster"
   result = new(SvdCluster)
 
@@ -188,12 +195,12 @@ func parseCluster(cNode: XmlNode): SvdCluster =
   result.description = cNode.getChildTextOpt("description")
   result.headerStructName = cNode.getChildTextOpt("headerStructName")
   result.addressOffset = cNode.child("addressOffset").innerText.parseHexOrDecInt.Natural
-  result.registerProperties = cNode.parseRegisterProperties
+  let rp = updateProperties(parentRp, cNode)
 
   for childClusterNode in cNode.findAllDirect("cluster"):
-    result.clusters.add childClusterNode.parseCluster()
+    result.clusters.add childClusterNode.parseCluster(rp)
   for registerNode in cNode.findAllDirect("register"):
-    result.registers.add registerNode.parseRegister()
+    result.registers.add registerNode.parseRegister(rp)
 
   result.dimGroup = cNode.parseDimElementGroup()
 
@@ -215,7 +222,7 @@ func setAllTypeNames(p: var SvdPeripheral) =
   for reg in p.registers.mitems:
     reg.nimTypeName = buildTypeName(reg, p.nimTypeName)
 
-func parsePeripheral(pNode: XmlNode): SvdPeripheral =
+func parsePeripheral(pNode: XmlNode, parentRp: SvdRegisterProperties): SvdPeripheral =
   assert pNode.tag == "peripheral"
   result = new(SvdPeripheral)
 
@@ -226,7 +233,8 @@ func parsePeripheral(pNode: XmlNode): SvdPeripheral =
   result.appendToName = pNode.getChildTextOpt("appendToName")
   result.prependToName = pNode.getChildTextOpt("prependToName")
   result.headerStructName = pNode.getChildTextOpt("headerStructName")
-  result.registerProperties = pNode.parseRegisterProperties
+
+  let rp = updateProperties(parentRp, pNode)
 
   for intNode in pNode.findAllDirect("interrupt"):
     result.interrupts.add SvdInterrupt(
@@ -238,9 +246,9 @@ func parsePeripheral(pNode: XmlNode): SvdPeripheral =
   let registersNode = pNode.child("registers")
   if not isNil(registersNode):
     for clusterNode in registersNode.findAllDirect("cluster"):
-      result.clusters.add clusterNode.parseCluster()
+      result.clusters.add clusterNode.parseCluster(rp)
     for registerNode in registersNode.findAllDirect("register"):
-      result.registers.add registerNode.parseRegister()
+      result.registers.add registerNode.parseRegister(rp)
 
   result.dimGroup = pNode.parseDimElementGroup()
   result.setAllTypeNames()
@@ -277,8 +285,6 @@ proc readSVD*(path: string): SvdDevice =
     licenseBlock: licenseBlock
   )
 
-  result.registerProperties = xml.parseRegisterProperties()
-
   var cpuNode = xml.child("cpu")
   result.cpu = SvdCpu(
     name: cpuNode.child("name").getText(),
@@ -290,11 +296,8 @@ proc readSVD*(path: string): SvdDevice =
     vendorSystickConfig: int(cpuNode.child("vendorSystickConfig").getText().parseBool())
   )
 
+  let deviceRp = SvdRegisterProperties(size: 32, access: raReadWrite).updateProperties(xml)
   for pNode in xml.child("peripherals").findAllDirect("peripheral"):
-    result.peripherals.add pNode.parsePeripheral()
+    result.peripherals.add pNode.parsePeripheral(deviceRp)
 
 export options
-
-when isMainModule:
-  #let device = readSVD("./tests/ARM_Example.svd")
-  let device = readSVD("./tests/ATSAMD21G18A.svd")

@@ -38,8 +38,8 @@ type SvdRegisterAccess* = enum
 
 type SvdRegisterProperties* = object
   # https://arm-software.github.io/CMSIS_5/SVD/html/elem_special.html#registerPropertiesGroup_gr
-  size*: Option[Natural]
-  access*: Option[SvdRegisterAccess]
+  size*: Natural
+  access*: SvdRegisterAccess
   # Other fields not implemented for the moment
   # protection
   # resetValue
@@ -66,7 +66,6 @@ type SvdCluster* {.acyclic.} = ref object
   registers*: seq[SvdRegister]
   clusters*: seq[SvdCluster]
   nimTypeName*: string
-  registerProperties*: SvdRegisterProperties
   dimGroup*: SvdDimElementGroup
 
 type SvdInterrupt* = object
@@ -87,7 +86,6 @@ type SvdPeripheral* = ref object
   clusters*: seq[SvdCluster]
   interrupts*: seq[SvdInterrupt]
   nimTypeName*: string
-  registerProperties*: SvdRegisterProperties
   dimGroup*: SvdDimElementGroup
 
 type
@@ -113,7 +111,6 @@ type
     peripherals*: seq[SvdPeripheral]
     metadata*: SvdDeviceMetadata
     cpu*: SvdCpu
-    registerProperties*: SvdRegisterProperties
 
 # Any SVD entity that supports dimElementGroup
 type SomeSvdDimable* = SvdPeripheral | SvdCluster | SvdRegister | SvdField
@@ -131,16 +128,6 @@ func isDimList*[T: SomeSvdDimable](e: T): bool =
 func isDimArray*[T: SomeSvdDimable](e: T): bool =
   e.dimGroup.dim.isSome and e.name.endsWith("[%s]")
 
-func getDimGroup[T: SomeSvdDimable](e: T): SvdDimElementGroup =
-  e.dimGroup
-
-func updateProperties*(parent, child: SvdRegisterProperties): SvdRegisterProperties =
-  # Create a new RegisterProperties instance by update parent fields with child
-  # fields if they are some.
-  result = parent
-  if child.size.isSome: result.size = child.size
-  if child.access.isSome: result.access = child.access
-
 iterator allRegisters*(p: SvdPeripheral): SvdRegister =
   for r in p.registers:
     yield r
@@ -152,3 +139,9 @@ iterator allRegisters*(p: SvdPeripheral): SvdRegister =
     for r in c.registers:
       yield r
     for child in c.clusters: clusterStack.add child
+
+template isWritable*(r: SvdRegister): bool =
+  r.properties.access in {raWriteOnce, raReadWrite, raWriteOnly, raReadWriteOnce}
+
+template isReadable*(r: SvdRegister): bool =
+  r.properties.access in {raReadOnly, raReadWrite, raReadWriteOnce}

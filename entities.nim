@@ -67,7 +67,7 @@ iterator dfs*[T](g: Graph[T], start: T): T =
   while stack.len > 0:
     let a = stack.pop
     yield a
-    for b in g.edgeTable[a]:
+    for b in g.edgeTable[a].items:
       stack.add b
 
 func toEntity*(c: SvdCluster, scope: string): SvdEntity =
@@ -147,12 +147,6 @@ func getName*(node: SvdEntity): string =
     of sePeripheral: node.periph.name
     of seRegister: node.register.name
     of seCluster: node.cluster.name
-
-func getRegisterProperties*(n: SvdEntity): SvdRegisterProperties =
-  case n.kind:
-  of sePeripheral: n.periph.registerProperties
-  of seCluster: n.cluster.registerProperties
-  of seRegister: n.register.properties
 
 func isDimArray*(e: SvdEntity): bool =
   case e.kind

@@ -52,11 +52,9 @@ func buildTypeName*(c: SvdCluster, parentTypeName: string): string =
     result = appendTypeName(parentTypeName, c.name.stripPlaceHolder)
   result = result & typeSuffix
 
-func getTypeFields(
-  n: SvdEntity,
-  children: seq[SvdEntity],
-  rp: SvdRegisterProperties): seq[TypeDefField] =
+func intName(r: SvdRegister): string = "uint" & $r.properties.size
 
+func getTypeFields(n: SvdEntity, children: seq[SvdEntity]): seq[TypeDefField] =
   case n.kind:
   of {sePeripheral, seCluster}:
     for cNode in children.sorted(cmpAddrOffset):
@@ -77,7 +75,7 @@ func getTypeFields(
     result.add TypeDefField(
       name: "p",
       public: false,
-      typeName: "ptr uint" & $rp.size.get
+      typeName: "ptr " & n.register.intName
     )
 
 func createTypeDefs*(dev: SvdDevice): OrderedTable[string, CodeGenTypeDef] =
@@ -86,31 +84,17 @@ func createTypeDefs*(dev: SvdDevice): OrderedTable[string, CodeGenTypeDef] =
     graph = dev.peripherals.buildEntityGraph()
     periphNodes = toSeq(graph.items).filterIt(it.kind == sePeripheral)
 
-  # Do DFS and pass down RegisterProperties of parents so that they can
-  # be inherited by child registers
-  var stack: seq[(SvdEntity, SvdRegisterProperties)]
   for pNode in periphNodes:
-    stack.add (
-      pNode,
-      dev.registerProperties.updateProperties(pNode.periph.registerProperties)
-    )
-
-  while stack.len > 0:
-    let
-      (n, rp) = stack.pop
-      newRp = rp.updateProperties(n.getRegisterProperties)
-      children = toSeq(graph.edges(n))
-      tname = n.getNimTypeName
-
-    if tname notin result:
-      result[tname] = CodeGenTypeDef(
-        name: tname,
-        public: false,
-        fields: n.getTypeFields(children, newRp)
-      )
-
-    for c in children:
-      stack.add (c, newRp)
+    for n in graph.dfs(pNode):
+      let
+        tname = n.getNimTypeName
+        children = toSeq(graph.edges(n))
+      if tname notin result:
+        result[tname] = CodeGenTypeDef(
+          name: tname,
+          public: false,
+          fields: n.getTypeFields(children)
+        )
 
 func createFieldEnums*(p: SvdPeripheral): OrderedTable[string, CodeGenEnumDef] =
   for reg in p.allRegisters:
@@ -125,8 +109,37 @@ func createFieldEnums*(p: SvdPeripheral): OrderedTable[string, CodeGenEnumDef] =
         else:
           appendTypeName(reg.nimTypeName, field.name)
 
-      let pos = field.bitRange.lsb
       for (k, v) in svdEnum.values:
-        en.fields.add (key: k, val: (v shl pos))
+        en.fields.add (key: k, val: v)
       # TODO: If enum already in table, validate that it is identical
       result[en.name] = en
+
+type CodeGenProcDef* = object
+  keyword*: string
+  name*: string
+  public*: bool
+  args*: seq[tuple[name: string, typ: string]]
+  retType*: Option[string]
+  body*: string
+
+func createAccessors*(p: SvdPeripheral): seq[CodeGenProcDef] =
+  for reg in p.allRegisters:
+    if reg.isReadable:
+      result.add CodeGenProcDef(
+        keyword: "template",
+        name: "get",
+        args: @[("reg", reg.nimTypeName)],
+        retType: reg.intName.some,
+        body: "volatileLoad(reg.p)"
+      )
+
+    if reg.isWritable:
+      result.add CodeGenProcDef(
+        keyword: "template",
+        name: "set",
+        args: @[
+          ("reg", reg.nimTypeName),
+          ("val", reg.intName),
+          ],
+        body: "volatileStore(reg.p, val)"
+      )

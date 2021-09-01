@@ -30,10 +30,10 @@ suite "Create codegen typedefs":
     check:
       idEnum.fields.len == 36
       idEnum.fields[2].key == "FDPLL32K"
-      idEnum.fields[2].val == 0x2 # shifted by 0
+      idEnum.fields[2].val == 0x2
 
       genEnum.fields.len == 9
       genEnum.fields[0].key == "GCLK0"
-      genEnum.fields[0].val == 0 # 0 shifted by 8
+      genEnum.fields[0].val == 0
       genEnum.fields[8].key == "GCLK8"
-      genEnum.fields[8].val == 8 shl 8
+      genEnum.fields[8].val == 8

@@ -178,6 +178,9 @@ proc renderDevice(d: SvdDevice, outf: File) =
     for en in periph.createFieldEnums.values:
       renderEnum(en, outf)
 
+    for prd in periph.createAccessors:
+      renderProcDef(prd, outf)
+
   renderTemplates(outf)
 
 proc renderStartup(d: SvdDevice, outf: File) =

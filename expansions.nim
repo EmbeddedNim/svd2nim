@@ -70,11 +70,6 @@ proc expandDerives*(periphs: var seq[SvdPeripheral]) =
       if p.appendToName.isNone: p.appendToName = parent.appendToName
       if p.headerStructName.isNone: p.headerStructName = parent.headerStructName
 
-      if p.registerProperties.size.isNone:
-        p.registerProperties.size = parent.registerProperties.size
-      if p.registerProperties.access.isNone:
-        p.registerProperties.access = parent.registerProperties.access
-
       p.dimGroup = updateDimGroup(p.dimGroup, parent.dimGroup)
 
       # No support for derived items that redefine children clusters/peripherals
@@ -95,11 +90,6 @@ proc expandDerives*(periphs: var seq[SvdPeripheral]) =
       var c = n.cluster
       if c.headerStructName.isNone: c.headerStructName = parent.headerStructName
 
-      if c.registerProperties.size.isNone:
-        c.registerProperties.size = parent.registerProperties.size
-      if c.registerProperties.access.isNone:
-        c.registerProperties.access = parent.registerProperties.access
-
       c.dimGroup = updateDimGroup(c.dimGroup, parent.dimGroup)
 
       # No support for derived items that redefine children clusters/peripherals
@@ -114,10 +104,9 @@ proc expandDerives*(periphs: var seq[SvdPeripheral]) =
       let parent = parentEntity.register
       var r = n.register
 
-      if r.properties.size.isNone:
-        r.properties.size = parent.properties.size
-      if r.properties.access.isNone:
-        r.properties.access = parent.properties.access
+      # No support for derived registers that overwrite properties (size and access)
+      r.properties.size = parent.properties.size
+      r.properties.access = parent.properties.access
 
       r.dimGroup = updateDimGroup(r.dimGroup, parent.dimGroup)
 

@@ -3,6 +3,7 @@ nimcache/
 build/
 
 *.kate-swp
+*.backup
 
 scratch.nim
 atsamd*.*

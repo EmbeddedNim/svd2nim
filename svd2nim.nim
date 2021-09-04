@@ -18,6 +18,7 @@ import svdparser
 import typedefs
 import codegen
 import expansions
+import sets
 
 ###############################################################################
 # Register generation from SVD
@@ -96,40 +97,6 @@ proc renderInterrupts(dev: SvdDevice, outf: File) =
 
 proc renderTemplates(outf: File) =
   renderHeader("# Templates", outf)
-  outf.write("""template store*[T: SomeInteger, U: SomeInteger](reg: T, val: U) =
-  volatileStore(reg.addr, cast[T](val))
-""")
-  outf.write("\n")
-  outf.write("""template load*[T: SomeInteger](reg: T) =
-  volatileLoad(reg.addr)
-""")
-  outf.write("\n")
-  outf.write("""template bit*[T: SomeInteger](n: varargs[T]): T =
-  var ret: T = 0;
-  for i in n:
-    ret = ret or (1 shl i)
-  ret
-""")
-  outf.write("\n")
-  outf.write("""template shift*[T, U: SomeInteger](reg: T, n: U): T =
-  reg shl n
-""")
-  outf.write("\n")
-  outf.write("""template bitSet*[T, U: SomeInteger](reg: T, n :varargs[U]) =
-  reg.st reg.ld or cast[T](bit(n))
-""")
-  outf.write("\n")
-  outf.write("""template bitClr*[T, U: SomeInteger](reg: T, n :varargs[U]) =
-  reg.st reg.ld and not cast[T](bit(n))
-""")
-  outf.write("\n")
-  outf.write("""template bitIsSet*[T, U: SomeInteger](reg: T, n: U): bool =
-  (reg.ld and cast[T](bit(n))) != 0
-""")
-  outf.write("\n")
-  outf.write("""template bitIsClr*[T, U: SomeInteger](reg: T, n: U): bool =
-  not bitIsSet(reg, n)
-""")
   outf.write("\n")
   outf.write("""template enableIRQ*(irq: IRQn) =
   NVIC.ISER[cast[int](irq) shr 5].st 1 shl (cast[int](irq) and 0x1F)
@@ -144,10 +111,9 @@ proc renderTemplates(outf: File) =
     NVIC.IP[cast[uint](irq)].st (cast[int](pri) shl 4) and 0xFF
 """)
 
-
 proc renderDevice(d: SvdDevice, outf: File) =
-  outf.write("# Peripheral access API for $# microcontrollers (generated using svd2nim)\n" % d.metadata.name.toUpper())
-  outf.write("# You can find an overview of the API here.\n\n")
+  outf.write("# Peripheral access API for $# microcontrollers (generated using svd2nim)\n\n" % d.metadata.name.toUpper())
+  outf.write("import volatile\n\n")
 
   if not d.cpu.isNil():
     outf.write("# Some information about this device.\n")
@@ -174,12 +140,29 @@ proc renderDevice(d: SvdDevice, outf: File) =
     renderPeripheral(periph, outf)
 
   renderHeader("# Accessors for peripheral registers", outf)
-  for periph in d.peripherals:
-    for en in periph.createFieldEnums.values:
-      renderEnum(en, outf)
+  # Create hash sets so we don't duplicate typedefs or accessor templates
+  # They are already deduplicated within a periph by the create* procs, but
+  # duplicates can still be created from another periph, eg when perriphs
+  # are derivedFrom or dimlists.
+  var
+    fieldStructTypes: HashSet[string]
+    fieldEnumTypes: HashSet[string]
+    accessors: HashSet[string]
 
-    for prd in periph.createAccessors:
-      renderProcDef(prd, outf)
+  for periph in d.peripherals:
+    for (k, objDef) in periph.createBitFieldStructs.pairs:
+      if k notin fieldStructTypes:
+        fieldStructTypes.incl k
+        renderType(objDef, outf)
+        outf.write("\n")
+    for (k, en) in periph.createFieldEnums.pairs:
+      if k notin fieldEnumTypes:
+        fieldEnumTypes.incl k
+        renderEnum(en, outf)
+    for (k, acc) in periph.createAccessors.pairs:
+      if k notin accessors:
+        accessors.incl k
+        renderProcDef(acc, outf)
 
   renderTemplates(outf)
 

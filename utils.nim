@@ -15,6 +15,10 @@ func sanitizeIdent*(ident: string): string =
   for (reg, repl) in reptab:
     result = result.replace(reg, repl)
 
+  # If starts with digit, prepend with x
+  if result[0] in "0123456789":
+    result = "x" & result
+
 func stripPlaceHolder*(s: string): string =
   # Strip %s and [%s] placeholders associated with dimElementGroup
   # elements from strings.

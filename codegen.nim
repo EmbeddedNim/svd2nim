@@ -18,7 +18,8 @@ proc renderType*(typ: CodeGenTypeDef, tg: File) =
     let
       fstar = if f.public: "*" else: ""
       fname = f.name.stripPlaceHolder.sanitizeIdent
-    tg.writeLine(Indent & fmt"{fName}{fstar}: {f.typeName}")
+      prag = if f.bitsize.isSome: fmt" {{.bitsize:{f.bitsize.get}.}}" else: ""
+    tg.writeLine(Indent & fmt"{fName}{fstar}{prag}: {f.typeName}")
 
 proc renderRegister(
   r: SvdRegister,
@@ -129,10 +130,8 @@ proc renderProcDef*(prd: CodeGenProcDef, tg: File) =
   let
     argString = prd.args.mapIt(it.name & ": " & it.typ).join(", ")
     retString = if prd.retType.isSome: ": " & prd.retType.get else: ""
-  tg.write(fmt"{prd.keyword} {prd.name}({argString}){retString} =")
-  if prd.body.countLines <= 1:
-    tg.write(" " & prd.body & "\n\n")
-  else:
-    for line in prd.body.splitLines:
-      tg.writeLine Indent & line
-    tg.write "\n"
+    star = if prd.public: "*" else: ""
+  tg.writeLine(fmt"{prd.keyword} {prd.name}{star}({argString}){retString} = ")
+  for line in prd.body.splitLines:
+    tg.writeLine Indent & line
+  tg.write "\n"

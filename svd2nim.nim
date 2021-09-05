@@ -18,6 +18,7 @@ import svdparser
 import codegen
 import expansions
 import sets
+import strformat
 
 ###############################################################################
 # Register generation from SVD
@@ -89,7 +90,7 @@ proc renderInterrupts(dev: SvdDevice, outf: File) =
       continue
     var itername = format("  $#_IRQn = $#, " % [iter.name.toUpper, iter.value.intToStr()])
     outf.write(itername)
-    outf.write(repeat(" ", 40-len(itername)))
+    outf.write(repeat(" ", 60-len(itername)))
     if iter.description.isSome:
       outf.write("# $#" % iter.description.get)
     outf.write("\n")
@@ -209,7 +210,7 @@ Default_Handler:
   .long PendSV_Handler
   .long SysTick_Handler
   // Extra interrupts for peripherals defined by the hardware vendor.
-""" % [d.metadata.name, d.metadata.description, d.metadata.licenseBlock])
+""" % [d.metadata.name, d.metadata.description, d.metadata.licenseBlock.get("")])
 
   let interrupts = d.getInterrupts
   var num = 0
@@ -286,9 +287,26 @@ proc updateSVD() =
   z.extractAll(dest)
   z.close()
 
+proc warnNotImplemented(dev: SvdDevice) =
+  for p in dev.peripherals:
+    if p.dimGroup.dim.isSome and p.name.contains("[%s]"):
+      stderr.writeLine(fmt"WARNING: Peripheral {p.name} is a dim array, not implemented.")
+
+    for reg in p.allRegisters:
+      for field in reg.fields:
+        if field.derivedFrom.isSome:
+          stderr.writeLine(fmt"WARNING: Register field {reg.name}.{field.name} of peripheral {p.name} is derived, not implemented.")
+
+        if field.dimGroup.dim.isSome:
+          stderr.writeLine(fmt"WARNING: Register field {reg.name}.{field.name} of peripheral {p.name} contains dimGroup, not implemented.")
+
+        if field.enumValues.isSome and field.enumValues.get.derivedFrom.isSome:
+          stderr.writeLine(fmt"WARNING: Register field {reg.name}.{field.name} of peripheral {p.name} contains a derived enumeration, not implemented.")
+
 proc processSvd(path: string): SvdDevice =
   # Parse SVD file and apply some post-processing
   result = readSVD(path)
+  warnNotImplemented result
 
   # Expand derivedFrom entities in peripherals and their children
   expandDerives result.peripherals

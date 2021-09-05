@@ -92,9 +92,8 @@ type
   SvdDeviceMetadata* = ref object
     file*: string
     name*: string
-    nameLower*: string
     description*: string
-    licenseBlock*: string
+    licenseBlock*: Option[string]
 
 type
   SvdCpu* = ref object

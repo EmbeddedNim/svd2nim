@@ -228,11 +228,6 @@ proc expandDerives*(periphs: var seq[SvdPeripheral]) =
       p.clusters = parent.clusters.deepCopy
       p.nimTypeName = parent.nimTypeName
 
-      # To the best of my understanding, it doesn't make sense to copy
-      # interrupts from a derivation. If parent defines interrupts, then the
-      # derived item should also define it's own interrupts.
-      if parent.interrupts.len > 0: doAssert p.interrupts.len > 0
-
     of seCluster:
       let parent = parentEntity.cluster
       var c = n.cluster

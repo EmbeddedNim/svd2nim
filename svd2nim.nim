@@ -2,19 +2,29 @@
   Convert SVD file to nim register memory mappings
 ]#
 import os
+import strutils
+import strtabs
+import tables
 import algorithm
-import streams
-import strutils, strtabs, sequtils
+import sequtils
 import httpclient, htmlparser, xmltree
 import tables
 import docopt
 import zip/zipfiles
+import regex
+import json
+import basetypes
 import svdparser
+import codegen
+import expansions
+import sets
+import strformat
 
 ###############################################################################
 # Register generation from SVD
 ###############################################################################
-proc renderHeader(text: string, outf: File) = 
+
+proc renderHeader(text: string, outf: File) =
   outf.write("\n")
   outf.write(repeat("#",80))
   outf.write("\n")
@@ -23,12 +33,12 @@ proc renderHeader(text: string, outf: File) =
   outf.write(repeat("#",80))
   outf.write("\n")
 
-proc renderCortexMExceptionNumbers(cpu: svdCpu, outf: File) =
+proc renderCortexMExceptionNumbers(cpu: SvdCpu, outf: File) =
   type exception = object
     name: string
     value: int
     description: string
-  
+
   let exceptions: seq[exception] = @[
     exception(name: "NonMaskableInt", value: -14, description: "Exception 2: Non Maskable Interrupt"),
     exception(name: "HardFault", value: -13, description: "Exception 3: Hard fault Interrupt"),
@@ -45,7 +55,7 @@ proc renderCortexMExceptionNumbers(cpu: svdCpu, outf: File) =
   ]
   # Render
   renderHeader("# Interrupt Number Definition", outf)
-  outf.write("const\n")
+  outf.write("type IRQn* = enum\n")
   var hdr = "# #### Cortex-M Processor Exception Numbers "
   outf.write(hdr & repeat("#", 80-len(hdr)) & "\n")
   for excep in exceptions:
@@ -56,192 +66,111 @@ proc renderCortexMExceptionNumbers(cpu: svdCpu, outf: File) =
       if excep.value in [-9]:
         continue
     if excep.value == 0:
-      hdr = "# #### STM32 specific Interrupt numbers "
+      hdr = "# #### Device specific Interrupt numbers "
       outf.write(hdr & repeat("#", 80-len(hdr)) & "\n")
-    var itername = "  $#_IRQn* = $#" % [excep.name, excep.value.intToStr()]
+    var itername = "  $#_IRQn = $#," % [excep.name, excep.value.intToStr()]
     outf.write(itername)
     outf.write(repeat(" ", 40-len(itername)))
-    outf.write("# $#\n" % excep.description)      
+    outf.write("# $#\n" % excep.description)
 
-proc renderInterrupt(interrupts: seq[svdInterrupt], outf: File) = 
+func getInterrupts(dev: SvdDevice): seq[SvdInterrupt] =
+  # Get interrupts from all periphs
+  dev.peripherals
+    .mapIt(it.interrupts)
+    .foldl(a & b)
+    .sortedByIt(it.value)
+
+proc renderInterrupts(dev: SvdDevice, outf: File) =
   var maxIrq = 0
   # Find all interrupts
-  for iter in interrupts:
-    if maxIrq < iter.index:
-      maxIrq = iter.index
-    if iter.index <= 1:
+  for iter in dev.getInterrupts:
+    if maxIrq < iter.value:
+      maxIrq = iter.value
+    if iter.value <= 1:
       continue
-    var itername = format("  $#_IRQn* = $# " % [iter.name.toUpper(), iter.index.intToStr()])
+    var itername = format("  $#_IRQn = $#, " % [iter.name.toUpper, iter.value.intToStr()])
     outf.write(itername)
-    outf.write(repeat(" ", 40-len(itername)))
-    outf.write("# $#\n" % iter.description)
-  outf.write("  MAX_IRQn* = $#\n\n" % maxIrq.intToStr())
-
-
-proc renderRegisterBitfields(register: svdRegister, name: string, outf: File) =
-  var sortedBitfields = register.bitfields
-  sortedBitfields.sort(proc (x,y: svdField): int = cmp(x.name, y.name))
-  outf.write("  # $#" % name)
-  if register.description != "":
-    outf.write(": $#" % register.description)
-  outf.write("\n")
-  for bitfield in sortedBitfields:
-    var value: string
-    if bitfield.value == 0:
-      value = "0"
-    else:
-      value = uint32(bitfield.value).toHex().strip(leading=true, trailing=false, {'0'})
-    outf.write("  $#* = 0x$#\n" % [bitfield.name, value])
-  
-
-proc renderPeripheralObjects(peripherals: seq[svdPeripheral], fpu: bool, outf: File) = 
-  var periphTypes: seq[string]
-  var sortedPeripherals: seq[svdPeripheral]
-  var distinctRegs: seq[svdRegister]
-  # Filter
-  sortedPeripherals = peripherals
-  sortedPeripherals.sort(proc (x,y: svdPeripheral): int = cmp(x.name, y.name))
-
-  # Render
-  renderHeader("# Peripheral Register Objects", outf)
-
-  for periph in sortedPeripherals:
-    if periphTypes.contains(periph.typeName) or periph.derivedFrom != "":
-      continue
-    periphTypes.add(periph.typeName)
-
-  for ptype in periphTypes:
-    outf.write("type $#_Registers = object\n" % ptype)
-    
-    var grpPeriphs = sortedPeripherals
-    grpPeriphs.keepItIf(it.typeName == ptype)
-
-    distinctRegs = @[]
-    for grpPeriph in grpPeriphs:
-      for reg in grpPeriph.registers:
-        if distinctRegs.anyIt(it.name == reg.name):
-          continue
-        else:
-          distinctRegs.add(reg)
-    for reg in distinctRegs:
-      var regDef = "  $#*: uint32" % [reg.name]
-      outf.write(regDef)
-      outf.write(repeat(" ", 40-len(regDef)))
-      outf.write("# $#\n" % reg.description)
-    
-    outf.write("\n")
-  
-  renderHeader("# Peripherals", outf)
-  outf.write("const\n")
-  for periph in sortedPeripherals:
-    outf.write("  p$# = cast[pointer](0x$#)\n" % [periph.name, periph.baseAddress.toHex()])
-  outf.write("\n")
-  outf.write("const\n")
-  for periph in sortedPeripherals:
-    outf.write("  $#* = cast[ptr $#_Registers](p$#)\n" % [periph.name, periph.typeName, periph.name])
-
-  for ptype in periphTypes:
-    renderHeader("# Bitfields for $#" % [ptype], outf)
-
-    var grpPeriphs = sortedPeripherals
-    grpPeriphs.keepItIf(it.typeName == ptype)
-
-    distinctRegs = @[]
-    for grpPeriph in grpPeriphs:
-      for reg in grpPeriph.registers:
-        if distinctRegs.anyIt(it.name == reg.name):
-          continue
-        else:
-          distinctRegs.add(reg)
-    
-    outf.write("const\n")
-    for register in distinctRegs:
-      if register.bitfields.len() > 0:
-        renderRegisterBitfields(register, register.name, outf)
-      for subregister in register.registers:
-        renderRegisterBitfields(subregister, register.name & "." & subregister.name, outf)
+    outf.write(repeat(" ", 60-len(itername)))
+    if iter.description.isSome:
+      outf.write("# $#" % iter.description.get)
     outf.write("\n")
 
 proc renderTemplates(outf: File) =
   renderHeader("# Templates", outf)
-  outf.write("""template store*[T: SomeInteger, U: SomeInteger](reg: T, val: U) =
-  volatileStore(reg.addr, cast[T](val))
-""")
-  outf.write("\n")
-  outf.write("""template load*[T: SomeInteger](reg: T) =
-  volatileLoad(reg.addr)
-""")
-  outf.write("\n")
-  outf.write("""template bit*[T: SomeInteger](n: varargs[T]): T =
-  var ret: T = 0;
-  for i in n:
-    ret = ret or (1 shl i)
-  ret
-""")
-  outf.write("\n")
-  outf.write("""template shift*[T, U: SomeInteger](reg: T, n: U): T =
-  reg shl n
-""")
-  outf.write("\n")
-  outf.write("""template bitSet*[T, U: SomeInteger](reg: T, n :varargs[U]) =
-  reg.st reg.ld or cast[T](bit(n))
-""")
-  outf.write("\n")
-  outf.write("""template bitClr*[T, U: SomeInteger](reg: T, n :varargs[U]) =
-  reg.st reg.ld and not cast[T](bit(n))
-""")
-  outf.write("\n")
-  outf.write("""template bitIsSet*[T, U: SomeInteger](reg: T, n: U): bool =
-  (reg.ld and cast[T](bit(n))) != 0
-""")
-  outf.write("\n")
-  outf.write("""template bitIsClr*[T, U: SomeInteger](reg: T, n: U): bool =
-  not bitIsSet(reg, n)
-""")
   outf.write("\n")
   outf.write("""template enableIRQ*(irq: IRQn) =
-NVIC.ISER[cast[int](irq) shr 5].st 1 shl (cast[int](irq) and 0x1F)
+  NVIC.ISER[cast[int](irq) shr 5].st 1 shl (cast[int](irq) and 0x1F)
 """)
   outf.write("\n")
   outf.write("""template disableIRQ*(irq: IRQn) =
-NVIC.ISCR[cast[int](irq) shr 5].st 1 shl (cast[int](irq) and 0x1F)
+  NVIC.ISCR[cast[int](irq) shr 5].st 1 shl (cast[int](irq) and 0x1F)
 """)
   outf.write("\n")
   outf.write("""template setPriority*[T: SomeInteger](irq: IRQn, pri: T) =
-if cast[int](irq) >= 0: # TODO: implement for IRQn < 0
-  NVIC.IP[cast[uint](irq)].st (cast[int](pri) shl 4) and 0xFF
+  if cast[int](irq) >= 0: # TODO: implement for IRQn < 0
+    NVIC.IP[cast[uint](irq)].st (cast[int](pri) shl 4) and 0xFF
 """)
 
-
-proc renderDevice(d: svdDevice, outf: File) = 
-  echo("Generating nim register mapping for $#" % d.metadata.name)
-  outf.write("# Peripheral access API for $# microcontrollers (generated using svd2nim)\n" % d.metadata.name.toUpper())
-  outf.write("# You can find an overview of the API here.\n\n")
-  
-  var fpuPresent = true
+proc renderDevice(d: SvdDevice, outf: File) =
+  outf.write("# Peripheral access API for $# microcontrollers (generated using svd2nim)\n\n" % d.metadata.name.toUpper())
+  outf.write("import volatile\n\n")
 
   if not d.cpu.isNil():
     outf.write("# Some information about this device.\n")
     outf.write("const DEVICE* = \"$#\"\n" % d.metadata.name)
   # CPU
-    outf.write("const $#_REV* = 0x0001\n" % d.cpu.name)
+    let cpuNameSan = d.cpu.name.replace(re"(M\d+)\+", "$1PLUS")
+    outf.write("const $#_REV* = 0x0001\n" % cpuNameSan)
     outf.write("const MPU_PRESENT* = $#\n" % d.cpu.mpuPresent.intToStr())
     outf.write("const FPU_PRESENT* = $#\n" % d.cpu.fpuPresent.intToStr())
     outf.write("const NVIC_PRIO_BITS* = $#\n" % d.cpu.nvicPrioBits.intToStr())
     outf.write("const Vendor_SysTickConfig* = $#\n" % d.cpu.vendorSystickConfig.intToStr())
-  
-  renderCortexMExceptionNumbers(d.cpu, outf)
-  renderInterrupt(d.interrupts, outf)
-  renderPeripheralObjects(d.peripherals, fpuPresent, outf)
-  renderTemplates(outf)
-  echo("Done")
 
-proc renderStartup(d: svdDevice, outf: File) =
-  echo("Generating startup file for $#" % d.metadata.name)
+  renderCortexMExceptionNumbers(d.cpu, outf)
+  renderInterrupts(d, outf)
+
+  renderHeader("# Type definitions for peripheral registers", outf)
+  let typeDefs = d.createTypeDefs()
+  for t in toSeq(typeDefs.values).reversed:
+    t.renderType(outf)
+    outf.writeLine("")
+
+  renderHeader("# Peripheral object instances", outf)
+  for periph in d.peripherals:
+    renderPeripheral(periph, outf)
+
+  renderHeader("# Accessors for peripheral registers", outf)
+  # Create hash sets so we don't duplicate typedefs or accessor templates
+  # They are already deduplicated within a periph by the create* procs, but
+  # duplicates can still be created from another periph, eg when perriphs
+  # are derivedFrom or dimlists.
+  var
+    fieldStructTypes: HashSet[string]
+    fieldEnumTypes: HashSet[string]
+    accessors: HashSet[string]
+
+  for periph in d.peripherals:
+    for (k, objDef) in periph.createBitFieldStructs.pairs:
+      if k notin fieldStructTypes:
+        fieldStructTypes.incl k
+        renderType(objDef, outf)
+        outf.write("\n")
+    for (k, en) in periph.createFieldEnums.pairs:
+      if k notin fieldEnumTypes:
+        fieldEnumTypes.incl k
+        renderEnum(en, outf)
+    for (k, acc) in periph.createAccessors.pairs:
+      if k notin accessors:
+        accessors.incl k
+        renderProcDef(acc, outf)
+
+  renderTemplates(outf)
+
+proc renderStartup(d: SvdDevice, outf: File) =
   outf.write("""# Automatically generated file. DO NOT EDIT.
-// Generated by gen-device-svd.py from $#, see $#
-// 
-// 
+// Generated by gen-device-svd.py from $#
+//
+//
 // $#
 .syntax unified
 // This is the default handler for interrupts, if triggered but not defined.
@@ -281,15 +210,16 @@ Default_Handler:
   .long PendSV_Handler
   .long SysTick_Handler
   // Extra interrupts for peripherals defined by the hardware vendor.
-""" % [d.metadata.name, d.metadata.descriptorSource, d.metadata.description, d.metadata.licenseBlock])
-  
+""" % [d.metadata.name, d.metadata.description, d.metadata.licenseBlock.get("")])
+
+  let interrupts = d.getInterrupts
   var num = 0
-  for intr in d.interrupts:
-    if intr.index == num - 1:
+  for intr in interrupts:
+    if intr.value == num - 1:
         continue
-    if intr.index < num:
+    if intr.value < num:
         raise newException(ValueError,"interrupt numbers are not sorted")
-    while intr.index > num:
+    while intr.value > num:
         outf.write("  .long 0\n")
         num += 1
     num += 1
@@ -307,7 +237,7 @@ Default_Handler:
   IRQ PendSV_Handler
   IRQ SysTick_Handler
 """)
-  for intr in d.interrupts:
+  for intr in interrupts:
     outf.write("  IRQ $#_IRQHandler\n" % [intr.name])
 
 ###############################################################################
@@ -321,14 +251,14 @@ proc updatePatchedSVD() =
   var client = newHttpClient()
   let html = client.getContent(url).parseHtml()
 
-  if not existsDir("./svd/stm32-patched"):
+  if not dirExists("./svd/stm32-patched"):
     createDir("./svd/stm32-patched")
   echo("Fetching SVD files")
   for a in html.findAll("a"):
     if a.attrs.hasKey("href"):
       if a.attrs["href"].contains("svd"):
         var svdUrl = url & a.attrs["href"]
-        try: 
+        try:
           let svd = client.getContent(svdUrl)
           var file = "svd/stm32-patched/" & a.attrs["href"].replace(".patched","")
           var output = open(file, fmWrite)
@@ -338,11 +268,11 @@ proc updatePatchedSVD() =
           echo("$# not found" % svdUrl)
   discard
 
-proc updateSVD() = 
-  if not existsDir("./svd"):
+proc updateSVD() =
+  if not dirExists("./svd"):
     createDir("./svd/")
     # Download the SVD files
-  if not existsFile("svd/cmsis-svd.zip"):
+  if not fileExists("svd/cmsis-svd.zip"):
     let svdUrl = "https://github.com/posborne/cmsis-svd/archive/master.zip"
 
     var client = newHttpClient()
@@ -357,11 +287,39 @@ proc updateSVD() =
   z.extractAll(dest)
   z.close()
 
+proc warnNotImplemented(dev: SvdDevice) =
+  for p in dev.peripherals:
+    if p.dimGroup.dim.isSome and p.name.contains("[%s]"):
+      stderr.writeLine(fmt"WARNING: Peripheral {p.name} is a dim array, not implemented.")
+
+    for reg in p.allRegisters:
+      for field in reg.fields:
+        if field.derivedFrom.isSome:
+          stderr.writeLine(fmt"WARNING: Register field {reg.name}.{field.name} of peripheral {p.name} is derived, not implemented.")
+
+        if field.dimGroup.dim.isSome:
+          stderr.writeLine(fmt"WARNING: Register field {reg.name}.{field.name} of peripheral {p.name} contains dimGroup, not implemented.")
+
+        if field.enumValues.isSome and field.enumValues.get.derivedFrom.isSome:
+          stderr.writeLine(fmt"WARNING: Register field {reg.name}.{field.name} of peripheral {p.name} contains a derived enumeration, not implemented.")
+
+proc processSvd(path: string): SvdDevice =
+  # Parse SVD file and apply some post-processing
+  result = readSVD(path)
+  warnNotImplemented result
+
+  # Expand derivedFrom entities in peripherals and their children
+  expandDerives result.peripherals
+
+  # Expand dim lists
+  # Note: dim arrays are expanded at codegen time
+  result.peripherals = expandAllDimLists(result.peripherals)
+
 ###############################################################################
 # Main
 ###############################################################################
 
-proc main() = 
+proc main() =
   let help = """
   svd2nim - A SVD to Register memory maps generator for STM32.
 
@@ -371,7 +329,7 @@ proc main() =
     svd2nim [-p | --updatePatched]
     svd2nim (-h | --help)
     svd2nim (-v | --version)
-  
+
   Options:
     -u --update         # Get the latest version of the SVD files from https://github.com/posborne/cmsis-svd/
     -p --updatePatched  # Get the latest version of the SVD files from https://stm32.agg.io/rs/
@@ -380,7 +338,6 @@ proc main() =
   """
 
   let args = docopt(help, version = "0.1.0")
-  echo args
   # Get Parameters
   if args.contains("-u") or args.contains("--update"):
     if args["--update"]:
@@ -389,10 +346,8 @@ proc main() =
     if args["--updatePatched"]:
       updatePatchedSVD()
   if args.contains("<svdFile>"):
-    var svdFile: string
-    svdFile = $args["<svdFile>"]
-    var dev = readSVD("svd/cmsis-svd-master/data/STMicro/" & svdFile,"https://github.com/posborne/cmsis-svd/" & svdFile)
-  
+    let dev = processSvd($args["<svdFile>"])
+
     var outf = open(dev.metadata.name.toLower() & ".nim",fmWrite)
     renderDevice(dev, outf)
 

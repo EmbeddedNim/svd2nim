@@ -1,1 +1,10 @@
 nimcache/
+.nimcache/
+build/
+
+*.kate-swp
+*.backup
+
+scratch.nim
+atsamd*.*
+arm_example.*

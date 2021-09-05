@@ -1,417 +1,290 @@
-import os, streams, strutils, xmlparser, xmltree, re, tables, strtabs, algorithm, sequtils
-###############################################################################
-# Models
-###############################################################################
-
-type
-  svdField* = ref object of RootObj
-    name*: string
-    description*: string
-    value*: int
-
-type
-  svdRegister* = ref object of RootObj
-    name*: string
-    address*: uint32
-    description*: string
-    bitfields*: seq[svdField]
-    registers*: seq[svdRegister]
-    dim*: int
-    elementSize*: int
-
-type
-  svdPeripheral* = ref object of RootObj
-    name*: string
-    groupName*: string
-    typeName*: string
-    description*: string
-    clusterName*: string
-    baseAddress*: uint32
-    address*: uint32
-    derivedFrom*: string
-    registers*: seq[svdRegister]
-    subtypes*: seq[svdPeripheral]
-    dim*: int
-    elementSize*: int
-
-type
-  svdDeviceMetadata* = ref object of RootObj
-    file*: string
-    descriptorSource*: string
-    name*: string
-    nameLower*: string
-    description*: string
-    licenseBlock*: string
-
-type
-  svdInterrupt* = ref object of RootObj
-    name*: string
-    index*: int
-    description*: string
-
-type
-  svdCpu* = ref object of RootObj
-    name*: string
-    revision*: string
-    endian*: string
-    mpuPresent*: int
-    fpuPresent*: int
-    nvicPrioBits*: int
-    vendorSystickConfig*: int
-
-type
-  svdDevice* = ref object of RootObj
-    peripherals*: seq[svdPeripheral]
-    interrupts*: seq[svdInterrupt]
-    metadata*: svdDeviceMetadata
-    cpu*: svdCpu
-
+import strutils
+import xmlparser
+import xmltree
+import options
+import strtabs
+import regex
+import basetypes
+import strformat
+import utils
+import codegen
 
 ###############################################################################
 # Private Procedures
 ###############################################################################
-proc getText(element: XmlNode): string =
-  if element.isNil():
-    return "none"
-  return element.innerText()
 
-proc formatText(text: string): string =
-  var ftext = text.replace(re("[ \t\n]+"), " ") # Collapse whitespace
-  ftext = ftext.replace("\\n", "\n")
-  ftext = ftext.strip()
-  return ftext
-
-proc addInterrupt(interrupts: var Table[string, svdInterrupt], intrName: string, intrIndex: int, description: string) = 
-  if interrupts.hasKey(intrName):
-    if interrupts[intrName].index != intrIndex:
-      raise newException(ValueError, "Interrupt with the same name has different indexes: $# ($¤ vs $#)" % [intrName, interrupts[intrName].index.intToStr(), intrIndex.intToStr()])
-    if not (description in interrupts[intrName].description.split(" # ")):
-      interrupts[intrName].description &= " # " & description
+func parseHexOrDecInt(s: string) : int =
+  # Parse string to integer. According to CMSIS spec, if the string
+  # starts with 0X or 0x it is to be interpreted as hexadecimal.
+  # TODO: Implementing parsing binary if string starts with #
+  if s.toLower().startsWith("0x"):
+    result = fromHex[int](s)
   else:
-    interrupts.add(intrName,svdInterrupt(
-      name: intrName,
-      index: intrIndex,
-      description: description
-    ))
+    result = parseInt(s)
 
-proc parseBitfields(groupName: string, regName: string, fieldsNodes: seq[XmlNode], bitFieldPrefix: string): seq[svdField] =
-  var fields: seq[svdField]
-  if fieldsNodes.len() > 0:
-    for fieldsNode in fieldsNodes:
-      for fieldNode in fieldsNode.findAll("field"):
-        var fieldName = fieldNode.child("name").getText().replace("__","_")
-        var lsbTags = fieldNode.findAll("lsb")
-        var lsb: int
-        if lsbTags.len() == 1:
-          lsb = lsbTags[0].getText.parseInt()
-        else: # stm32 pos
-          lsb = fieldNode.child("bitOffset").getText().parseInt()
-        var msbTags = fieldNode.findAll("msb")
-        var msb: int
-        if msbTags.len() == 1:
-          msb = msbTags[0].getText().parseInt()
-        else: # stm32 msk
-          msb = fieldNode.child("bitWidth").getText().parseInt()
-        # bitOffset == Pos
-        # bitWidth == Msk
-        fields.add(
-          svdField(
-            name: "$#_$#$#_$#_Pos" % [groupName, bitFieldPrefix, regName, fieldName],
-            description: "Position of $# field." % fieldName,
-            value: lsb
-          )
-        )
-        fields.add(
-          svdField(
-            name: "$#_$#$#_$#_Msk" % [groupName, bitFieldPrefix, regName, fieldName],
-            description: "Bit mask of $# field." % fieldName,
-            value: msb shl lsb#int((0xffffffff shr (31 - (msb - lsb))) shl lsb)
-          )
-        )
-        #if lsb == msb: # single bit
-        fields.add(
-          svdField(
-            name: "$#_$#$#_$#" % [groupName, bitFieldPrefix, regName, fieldName],
-            description: "Bit $#." % fieldName,
-            value: msb shl lsb
-          )
-        )
-        for enumNode in fieldNode.findAll("enumeratedValue"):
-          var enumName = enumNode.child("name").getText()
-          var enumDescription = enumNode.child("description").getText()
-          var enumValue = enumNode.child("value").getText().parseInt()
-          fields.add(
-            svdField(
-              name: "$#_$#$#_$#_$#" % [groupName, bitFieldPrefix, regName, fieldName, enumName],
-              description: enumDescription,
-              value: enumValue
-            )
-          )
-  return fields
+func getChildTextOpt(pNode: XmlNode, tag: string): Option[string] =
+  # Get text of child tag, or none if tag not found.
+  let c = pNode.child(tag)
+  if c.isNil:
+    return none(string)
+  elif c.kind notin {xnText, xnCData, xnElement}:
+    return none(string)
+  else:
+    return some(c.innerText)
 
-proc parseRegister(groupName: string, regNode: XmlNode, baseAddress: int, bitFieldPrefix: string): seq[svdRegister] =
-  var regName = regNode.child("name").getText()
-  var regDescription = regNode.child("description").getText().formatText()
-  var offsetNodes = regNode.findAll("offset")
-  if offsetNodes.len() == 0:
-    offsetNodes = regNode.findAll("addressOffset")
-  var address = baseAddress + offsetNodes[0].getText().parseHexInt()
+func getChildNaturalOpt(pNode: XmlNode, tag: string): Option[Natural] =
+    # Get text of child tag cas as Natural, or none if tag not found.
+    let text = pNode.getChildTextOpt(tag)
+    if text.isNone:
+      return none(Natural)
+    else:
+      return some(text.get().parseHexOrDecInt.Natural)
 
-  var size = 4
-  var nodeSizes = regNode.findAll("size")
-  if nodeSizes.len() > 0:
-    size = nodeSizes[0].getText().parseHexInt() # 8
-  
-  var dimNodes = regNode.findAll("dim")
-  var fieldsNodes = regNode.findAll("fields")
+func getChildTextExc(pNode: XmlNode, tag: string): string =
+  let c = pNode.child(tag)
+  if c.isNil or (c.kind notin {xnText, xnCData, xnElement}):
+    let fline = splitLines($pNode)[0]
+    raise newException(SVDError, fmt"Missing tag '{tag}' in element {fline}")
+  result = c.innerText
 
-  var dim: int
-  if dimNodes.len() > 0:
-    dim = dimNodes[0].getText().parseInt()
-    var dimIncrement = regNode.child("dimIncrement").getText().parseHexInt()
-    if "[%s]" in regName:
-      # just a normal array of registers
-      regName = regName.replace("[%s]", "")
-    elif "%s" in regName:
-      # a "spaced array" of registers, special processing required
-      # we need to generate a separate register for each "element"
-      var results: seq[svdRegister]
-      for i in 0..dim:
-        var regAddress = address + (i * dimIncrement)
-        results.add(
-          svdRegister(
-            name: regName.replace("%s", i.intToStr()),
-            address: uint32(regAddress),
-            description: regDescription.replace("\n", " "),
-            dim: dim,
-            elementSize: size
-          )
-        )
-      # Set first result bitfield
-      var shortName = regName.replace("_%s", "").replace("%s","")
-      results[0].bitfields = parseBitfields(groupName, shortName, fieldsNodes, bitFieldPrefix)
-      return results
-  # Dim empty
-  var reg: seq[svdRegister] = @[svdRegister(
-    name: regName,
-    address: uint32(address),
-    description: regDescription.replace("\n", " "),
-    bitfields: parseBitFields(groupName, regName, fieldsNodes, bitFieldPrefix),
-    dim: dim,
-    elementSize: size
-  )]
-  return reg
+func getChildOrError(pNode: XmlNode, tag: string): XmlNode =
+  result = pNode.child(tag)
+  if result.isNil:
+    let fline = splitLines($pNode)[0]
+    raise newException(SVDError, fmt"Missing tag '{tag}' in element {fline}" )
 
-proc updatePeripheralType(peripherals: seq[svdPeripheral]): seq[svdPeripheral] =
-  # Updates the peripheral type
-  # Initial peripheralType == groupName
-  var sortedPeripherals = peripherals
-  sortedPeripherals.sort(proc (x,y: svdPeripheral): int = cmp(x.name, y.name))
-  
-  for peripheral in sortedPeripherals:
-    if peripheral.derivedFrom != "":
+func attrOpt(n: XmlNode, name: string): Option[string] =
+  # Return some(attr_value) if attr exists, otherwise none
+  if isNil(n.attrs):
+    none(string)
+  elif name in n.attrs:
+    some(n.attrs[name])
+  else:
+    none(string)
+
+iterator findAllDirect(n: XmlNode, tag: string): XmlNode =
+  # Iterate over all direct children with given tag
+  for cld in n.items:
+    if cld.kind != xnElement: # Only xnElement allows tag access
       continue
-    var groupPeriphs = sortedPeripherals
-    groupPeriphs.keepItIf(it.groupName == peripheral.groupName)
-    
-    if groupPeriphs.len() > 1:
-      for grpPeriph in groupPeriphs:
-        for i in 0..grpPeriph.registers.len()-1:
-          if peripheral.typeName != "":
-            break
-          if not peripheral.registers.anyIt(it.name == grpPeriph.registers[i].name):
-            peripheral.typeName = peripheral.name
-            break
-          else:
-            peripheral.typeName = peripheral.groupName
-    
-    if peripheral.typeName == "":
-      peripheral.typeName = peripheral.groupName
-  
-  for dperiph in sortedPeripherals:
-    if dperiph.derivedFrom == "":
-      continue
-    var parentPeriph = sortedPeripherals
-    parentPeriph.keepItIf(it.name == dperiph.derivedFrom)
-    dperiph.typeName = parentPeriph[0].typeName
+    if cld.tag == tag:
+      yield cld
 
-  return sortedPeripherals
+func parseFieldEnum(eNode: XmlNode): SvdFieldEnum =
+  assert eNode.tag == "enumeratedValues"
+  result.name = eNode.getChildTextOpt("name")
+  result.derivedFrom = eNode.attrOpt("derivedFrom")
+  result.headerEnumName = eNode.getChildTextOpt("headerEnumName")
+
+  let usage = eNode.child("usage")
+  if not isNil(usage) and usage.innerText != "read-write":
+    raise newException(NotImplementedError, "Separate read/write enums not implemented")
+
+  for enumValueNode in eNode.findAllDirect("enumeratedValue"):
+    let valueNode = enumValueNode.child("value")
+    if isNil(valueNode):
+      # Support for isDefault not implementented, ignore
+      continue
+    let
+      name = enumValueNode.getChildTextExc("name")
+      val = valueNode.innerText.parseHexOrDecInt
+    result.values.add (name: name, val: val)
+
+func parseDimElementGroup(n: XmlNode): SvdDimElementGroup =
+  result.dim = n.getChildNaturalOpt("dim")
+  result.dimIncrement = n.getChildNaturalOpt("dimIncrement")
+  #result.dimIndex = n.getChildTextOpt("dimIndex")
+  result.dimName = n.getChildTextOpt("dimName")
+  #result.dimIndex = n.getChildTextOpt("dimArrayIndex")
+
+  if result.dim.isSome and result.dimIncrement.isNone:
+    raise newException(SVDError, "Node has dim but no dimIncrement")
+
+func parseField(fNode: XmlNode): SvdField =
+  assert fNode.tag == "field"
+  result.name = fNode.getChildTextExc("name")
+  result.derivedFrom = fNode.attrOpt("derivedFrom")
+  result.description = fNode.getChildTextOpt("description")
+
+  # Get list of child tag names
+  var childTags = newSeq[string]()
+  for elem in fNode:
+    if elem.kind == xnElement: childTags.add elem.tag
+
+  # SVD spec allows three ways to specify the location and size of bitfields
+  # Here we check for th three possibilities and parse them to the SvdBitrange
+  # type, which is close to the bitRangePattern spec.
+  if childTags.contains("bitOffset") and childTags.contains("bitWidth"):
+    # bitRangeOffsetWidthStyle
+    let
+      bitOffset: Natural = fNode.child("bitOffset").innerText.parseHexOrDecInt
+      bitWidth: Natural = fNode.child("bitWidth").innerText.parseHexOrDecInt
+    result.bitRange = (lsb: bitOffset, msb: (bitOffset + bitWidth - 1).Natural)
+  elif childTags.contains("lsb") and childTags.contains("msb"):
+    # bitRangeOffsetWidthStyle
+    let
+      lsb: Natural = fNode.child("lsb").innerText.parseHexOrDecInt
+      msb: Natural = fNode.child("msb").innerText.parseHexOrDecInt
+    result.bitRange = (lsb: lsb, msb: msb)
+  elif childTags.contains("bitRange"):
+    # bitRangePattern
+    let
+      pat = re"\[([[:alnum:]]+):([[:alnum:]]+)\]"
+      text = fNode.child("bitRange").innerText
+    var m: RegexMatch
+    doAssert text.match(pat, m)
+    let
+      msb: Natural = m.group(0, text)[0].parseHexOrDecInt
+      lsb: Natural = m.group(1, text)[0].parseHexOrDecInt
+    result.bitRange = (lsb: lsb, msb: msb)
+  else:
+    raise newException(SVDError, fmt"Invalid bit range specification in field '{result.name}'")
+
+  let enumVals = fNode.child("enumeratedValues")
+  if not isNil(enumVals):
+    result.enumValues = some(enumVals.parseFieldEnum)
+  else:
+    result.enumValues = none(SvdFieldEnum)
+
+  result.dimGroup = fNode.parseDimElementGroup()
+
+func updateProperties(parent: SvdRegisterProperties, node: XmlNode): SvdRegisterProperties =
+  # Create a new RegisterProperties instance by update parent fields with child
+  # fields if they are some.
+  result = parent
+
+  let
+    size = node.getChildNaturalOpt("size")
+    access = node.getChildTextOpt("access")
+
+  if size.isSome: result.size = size.get
+
+  if access.isSome:
+    result.access = case access.get:
+      of "read-write": raReadWrite
+      of "read-only": raReadOnly
+      of "write-only": raWriteOnly
+      of "writeOnce": raWriteOnce
+      of "read-writeOnce": raReadWriteOnce
+      else: raise newException(SVDError, "Unknown access value: " & access.get)
+
+func parseRegister(rNode: XmlNode, parentRp: SvdRegisterProperties): SvdRegister =
+  assert rNode.tag == "register"
+  result = new(SvdRegister)
+
+  result.name = rNode.getChildTextExc("name")
+  result.derivedFrom = rNode.attrOpt("derivedFrom")
+  result.addressOffset = rNode.getChildTextExc("addressOffset").parseHexOrDecInt.Natural
+  result.description = rNode.getChildTextOpt("description")
+  result.properties = updateProperties(parentRp, rNode)
+
+  if result.derivedFrom.isSome and (not rNode.child("size").isNil or not rNode.child("access").isNil):
+    raise newException(SVDError, "Not supported: derived register '" & result.name & "' redefines size or access.")
+
+  let fieldsTag = rnode.child("fields")
+  if not isNil(fieldsTag):
+    for fieldNode in fieldsTag.findAllDirect("field"):
+      result.fields.add fieldNode.parseField
+
+  result.dimGroup = rNode.parseDimElementGroup()
+
+func parseCluster(cNode: XmlNode, parentRp: SvdRegisterProperties): SvdCluster =
+  assert cNode.tag == "cluster"
+  result = new(SvdCluster)
+
+  result.name = cNode.getChildTextExc("name")
+  result.derivedFrom = cNode.attrOpt("derivedFrom")
+  result.description = cNode.getChildTextOpt("description")
+  result.headerStructName = cNode.getChildTextOpt("headerStructName")
+  result.addressOffset = cNode.getChildTextExc("addressOffset").parseHexOrDecInt.Natural
+  let rp = updateProperties(parentRp, cNode)
+
+  for childClusterNode in cNode.findAllDirect("cluster"):
+    result.clusters.add childClusterNode.parseCluster(rp)
+  for registerNode in cNode.findAllDirect("register"):
+    result.registers.add registerNode.parseRegister(rp)
+
+  result.dimGroup = cNode.parseDimElementGroup()
+
+func buildTypeName(r: SvdRegister, parentTypeName: string): string =
+  if r.dimGroup.dimName.isSome:
+    result = r.dimGroup.dimName.get
+  else:
+    result = appendTypeName(parentTypeName, r.name.stripPlaceHolder) & typeSuffix
+
+func setAllTypeNames(c: var SvdCluster, parentTypeName: string) =
+  c.nimTypeName = buildTypeName(c, parentTypeName)
+  for child in c.clusters.mitems: child.setAllTypeNames(c.nimTypeName)
+  for reg in c.registers.mitems:
+    reg.nimTypeName = buildTypeName(reg, c.nimTypeName)
+
+func setAllTypeNames(p: var SvdPeripheral) =
+  p.nimTypeName = buildTypeName(p)
+  for c in p.clusters.mitems: c.setAllTypeNames(p.nimTypeName)
+  for reg in p.registers.mitems:
+    reg.nimTypeName = buildTypeName(reg, p.nimTypeName)
+
+func parsePeripheral(pNode: XmlNode, parentRp: SvdRegisterProperties): SvdPeripheral =
+  assert pNode.tag == "peripheral"
+  result = new(SvdPeripheral)
+
+  result.name = pNode.getChildTextExc("name")
+  result.derivedFrom = pNode.attrOpt("derivedFrom")
+  result.description = pNode.getChildTextOpt("description")
+  result.baseAddress = pNode.getChildTextExc("baseAddress").parseHexOrDecInt.Natural
+  result.appendToName = pNode.getChildTextOpt("appendToName")
+  result.prependToName = pNode.getChildTextOpt("prependToName")
+  result.headerStructName = pNode.getChildTextOpt("headerStructName")
+
+  let rp = updateProperties(parentRp, pNode)
+
+  for intNode in pNode.findAllDirect("interrupt"):
+    result.interrupts.add SvdInterrupt(
+      name: intNode.getChildTextExc("name"),
+      description: intNode.getChildTextOpt("description"),
+      value: intNode.getChildTextExc("value").parseHexOrDecInt
+    )
+
+  let registersNode = pNode.child("registers")
+  if not isNil(registersNode):
+    for clusterNode in registersNode.findAllDirect("cluster"):
+      result.clusters.add clusterNode.parseCluster(rp)
+    for registerNode in registersNode.findAllDirect("register"):
+      result.registers.add registerNode.parseRegister(rp)
+
+  result.dimGroup = pNode.parseDimElementGroup()
+  result.setAllTypeNames()
+
 ###############################################################################
 # Public Procedures
 ###############################################################################
-proc readSVD*(path: string, sourceUrl: string): svdDevice =
-  echo("Parsing SVD file: $#" % path)
-  var device = svdDevice.new()
-  var xml = path.loadXml()
-  var deviceName = xml.child("name").getText()
-  var deviceDescription = xml.child("description").getText().strip()
-  var licenseTexts = xml.findAll("licenseText")
-  var licenseText: string
-  if licenseTexts.len() == 0:
-    licenseText = ""
-  elif licenseTexts.len() == 1:
-    licenseText = licenseTexts[0].getText().formatText()
-  else:
-    raise newException(ValueError, "multiple <licenseText> elements")
-  
-  device.peripherals = @[]
-  var peripheralDict = initTable[string, svdPeripheral]()
-  var groups = initTable[string, svdPeripheral]()
+proc readSVD*(path: string): SvdDevice =
+  result = SvdDevice.new()
+  let
+    xml = path.loadXml()
+    deviceName = xml.getChildTextExc("name")
+    deviceDescription = xml.getChildTextExc("description").strip()
 
-  var interrupts = initTable[string, svdInterrupt]()
-
-  for periphNode in xml.findAll("peripheral"):
-    var peripheral: svdPeripheral
-    var name = periphNode.child("name").getText()
-    if name == "C_ADC":
-      name = "ADC_Common"
-    var descriptionTags = periphNode.findAll("description")
-    var description = ""
-    if descriptionTags.len() > 0:
-      description = descriptionTags[0].getText().formatText()
-    var baseAddress = periphNode.child("baseAddress").getText().parseHexInt()
-    var groupNameTags = periphNode.findAll("groupName")
-    var groupName = ""
-    if groupNameTags.len() > 0:
-      groupName = groupNameTags[0].getText()
-
-    var interruptsNodes = periphNode.findAll("interrupt")
-    for interrupt in interruptsNodes:
-      var intrName =interrupt.child("name").getText()
-      var intrIndex = interrupt.child("value").getText().parseInt()
-      addInterrupt(interrupts, intrName, intrIndex, description)
-
-    if (not periphNode.attrs().isNil() and periphNode.attrs().hasKey("derivedFrom")):# or (groupName in groups):
-      var derivedFrom: svdPeripheral
-      if not periphNode.attrs().isNil() and periphNode.attrs().hasKey("derivedFrom"):
-        var derivedFromName = periphNode.attrs()["derivedFrom"]
-        derivedFrom = peripheralDict[derivedFromName]
-      else:
-        derivedFrom = groups[groupName]
-      
-      peripheral = svdPeripheral(
-        name: name,
-        groupName: derivedFrom.groupName,
-        description: if description != "": description else: derivedFrom.description,
-        baseAddress: uint32(baseAddress),
-        derivedFrom: periphNode.attrs()["derivedFrom"]
-      )
-      device.peripherals.add(peripheral)
-      peripheralDict.add(name, peripheral)
-
-      if derivedFrom.subtypes.len() > 0:
-        for subtype in derivedFrom.subtypes:
-          var subp = svdPeripheral(
-            name: name & "_" & subtype.clusterName,
-            groupName: subtype.groupName,
-            description: subtype.description,
-            baseAddress: uint32(baseAddress)
-          )
-          device.peripherals.add(subp)
-      continue
-    
-    peripheral = svdPeripheral(
-      name: name,
-      groupName: if groupName != "": groupName else: name,
-      description: description,
-      baseAddress: uint32(baseAddress)
-    )
-    
-    device.peripherals.add(peripheral)
-    peripheralDict.add(name, peripheral)
-    
-    if not (groupName in groups) and (groupName != ""):
-      groups.add(groupName, peripheral)
-    
-    var regsNodes = periphNode.findAll("registers")
-
-    if regsNodes.len() > 0:
-      if regsNodes.len() != 1:
-        raise newException(ValueError, "expected just one <registers> in a <peripheral>")
-      for register in regsNodes[0].findAll("register"):
-        peripheral.registers.add(parseRegister((if groupName != "": groupName else: name), register, baseAddress,""))
-
-      for cluster in regsNodes[0].findAll("cluster"):
-        var clusterName = cluster.child("name").getText().replace("[%s]","")
-        var clusterDescription = cluster.child("description").getText()
-        var clusterPrefix = clusterName & "_"
-        var clusterOffset = cluster.child("addressOffset").getText().parseHexInt()
-        var dim: int
-        var dimIncrement: int
-        if cluster.child("dim").isNil():
-          if clusterOffset == 0:
-            # make this a seperate peripheral
-            var cpRegisters: seq[svdRegister] = @[]
-            for regNode in cluster.findAll("register"):
-              cpRegisters.add(parseRegister(groupName, regNode, baseAddress, clusterPrefix))
-            cpRegisters = cpRegisters.sortedbyIt(it.address)
-            var clusterPeripheral = svdPeripheral(
-              name: name & "_" & clusterName,
-              groupName: groupName & "_" & clusterName,
-              description: description & " - " & clusterName,
-              clusterName: clusterName,
-              baseAddress: uint32(baseAddress),
-              registers: cpRegisters
-            )
-            device.peripherals.add(clusterPeripheral)
-            peripheral.subtypes.add(clusterPeripheral)
-            continue
-
-        else:
-          dim = cluster.child("dim").getText().parseInt()
-          dimIncrement = cluster.child("dimIncrement").getText().parseHexInt()
-        var clusterRegisters: seq[svdRegister] = @[]
-        for regNode in cluster.findAll("register"):
-          clusterRegisters.add(parseRegister((if groupName != "": groupName else: name), regNode, baseAddress + clusterOffset, clusterPrefix))
-        clusterRegisters = clusterRegisters.sortedByIt(it.address)
-        if dimIncrement == 0:
-          var lastReg = clusterRegisters[^1]
-          var lastAddress = lastReg.address
-          if lastReg.dim > 0:
-            lastAddress = uint32(int(lastReg.address) + lastReg.dim * lastReg.elementSize)
-          var firstAddress = clusterRegisters[0].address
-          dimIncrement = int(lastAddress - firstAddress)
-        peripheral.registers.add(svdRegister(
-          name: clusterName,
-          address: uint32(baseAddress + clusterOffset),
-          description: clusterDescription,
-          registers: clusterRegisters,
-          dim: dim,
-          elementSize: dimIncrement
-        ))
-    peripheral.registers.sort(proc (x,y: svdRegister): int = 
-      result = cmp(x.address, y.address))
-  
-  device.peripherals = updatePeripheralType(device.peripherals)
-
-  device.peripherals.sort(proc (x,y: svdPeripheral): int =
-    result = cmp(x.name, y.name))
-
-  for key in interrupts.keys:
-    device.interrupts.add(interrupts[key])
-  device.interrupts.sort(proc (x,y: svdInterrupt): int = 
-    result = cmp(x.index, y.index))
-
-  var licenseBlock = ""
-  if licenseText != "":
-    licenseBlock = "//    " & licenseText.replace("\n","\n//    ")
-    licenseBlock = "\n" & licenseBlock
-  device.metadata = svdDeviceMetadata(
+  result.metadata = SvdDeviceMetadata(
     file: path,
-    descriptorSource: sourceUrl,
     name: deviceName,
-    nameLower: deviceName.toLower(),
     description: deviceDescription,
-    licenseBlock: licenseBlock
+    licenseBlock: xml.getChildTextOpt("licenseText")
   )
-  var cpuNode = xml.child("cpu")
-  device.cpu = svdCpu(
-    name: cpuNode.child("name").getText(),
-    revision: cpuNode.child("revision").getText(),
-    endian: cpuNode.child("endian").getText(),
-    mpuPresent: int(cpuNode.child("mpuPresent").getText().parseBool()),
-    fpuPresent: int(cpuNode.child("fpuPresent").getText().parseBool()),
-    nvicPrioBits: cpuNode.child("nvicPrioBits").getText().parseInt(),
-    vendorSystickConfig: int(cpuNode.child("vendorSystickConfig").getText().parseBool())
+
+  let cpuNode = xml.getChildOrError("cpu")
+  result.cpu = SvdCpu(
+    name: cpuNode.getChildTextExc("name"),
+    revision: cpuNode.getChildTextExc("revision"),
+    endian: cpuNode.getChildTextExc("endian"),
+    mpuPresent: int(cpuNode.getChildTextExc("mpuPresent").parseBool()),
+    fpuPresent: int(cpuNode.getChildTextExc("fpuPresent").parseBool()),
+    nvicPrioBits: cpuNode.getChildTextExc("nvicPrioBits").parseHexOrDecInt(),
+    vendorSystickConfig: int(cpuNode.getChildTextExc("vendorSystickConfig").parseBool())
   )
-  return device
+
+  let deviceRp = SvdRegisterProperties(size: 32, access: raReadWrite).updateProperties(xml)
+  for pNode in xml.getChildOrError("peripherals").findAllDirect("peripheral"):
+    result.peripherals.add pNode.parsePeripheral(deviceRp)
+
+export options

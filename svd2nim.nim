@@ -1,18 +1,12 @@
 #[
   Convert SVD file to nim register memory mappings
 ]#
-import os
 import strutils
-import strtabs
-import tables
 import algorithm
 import sequtils
-import httpclient, htmlparser, xmltree
 import tables
 import docopt
-import zip/zipfiles
 import regex
-import json
 import basetypes
 import svdparser
 import codegen
@@ -166,53 +160,6 @@ proc renderDevice(d: SvdDevice, outf: File) =
 
   renderTemplates(outf)
 
-###############################################################################
-# SVD Parser and SVD Updating
-###############################################################################
-
-# Gets the patched SVD's from https://stm32.agg.io/rs/
-proc updatePatchedSVD() =
-  var url = "https://stm32.agg.io/rs/"
-
-  var client = newHttpClient()
-  let html = client.getContent(url).parseHtml()
-
-  if not dirExists("./svd/stm32-patched"):
-    createDir("./svd/stm32-patched")
-  echo("Fetching SVD files")
-  for a in html.findAll("a"):
-    if a.attrs.hasKey("href"):
-      if a.attrs["href"].contains("svd"):
-        var svdUrl = url & a.attrs["href"]
-        try:
-          let svd = client.getContent(svdUrl)
-          var file = "svd/stm32-patched/" & a.attrs["href"].replace(".patched","")
-          var output = open(file, fmWrite)
-          output.write(svd)
-          output.close()
-        except:
-          echo("$# not found" % svdUrl)
-  discard
-
-proc updateSVD() =
-  if not dirExists("./svd"):
-    createDir("./svd/")
-    # Download the SVD files
-  if not fileExists("svd/cmsis-svd.zip"):
-    let svdUrl = "https://github.com/posborne/cmsis-svd/archive/master.zip"
-
-    var client = newHttpClient()
-    echo "Downloading from ", svdUrl
-    client.downloadFile(svdUrl,"svd/cmsis-svd.zip")
-
-  var z = ZipArchive()
-  let dest = "./svd"
-  if not z.open("svd/cmsis-svd.zip"):
-    echo "Couldn't open file"
-  echo("Extracting SVD files")
-  z.extractAll(dest)
-  z.close()
-
 proc warnNotImplemented(dev: SvdDevice) =
   for p in dev.peripherals:
     if p.dimGroup.dim.isSome and p.name.contains("[%s]"):
@@ -247,30 +194,20 @@ proc processSvd(path: string): SvdDevice =
 
 proc main() =
   let help = """
-  svd2nim - A SVD to Register memory maps generator for STM32.
+  svd2nim - Generate Nim peripheral register APIs for ARM using CMSIS-SVD files.
 
   Usage:
     svd2nim <svdFile>
-    svd2nim [-u | --update]
-    svd2nim [-p | --updatePatched]
     svd2nim (-h | --help)
     svd2nim (-v | --version)
 
   Options:
-    -u --update         # Get the latest version of the SVD files from https://github.com/posborne/cmsis-svd/
-    -p --updatePatched  # Get the latest version of the SVD files from https://stm32.agg.io/rs/
     -h --help           # Show this screen.
     -v --version        # Show version.
   """
 
-  let args = docopt(help, version = "0.1.0")
+  let args = docopt(help, version = "0.2.0")
   # Get Parameters
-  if args.contains("-u") or args.contains("--update"):
-    if args["--update"]:
-      updateSVD()
-  if args.contains("-p") or args.contains("--updatePatched"):
-    if args["--updatePatched"]:
-      updatePatchedSVD()
   if args.contains("<svdFile>"):
     let dev = processSvd($args["<svdFile>"])
 

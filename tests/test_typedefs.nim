@@ -1,5 +1,5 @@
 import unittest
-import typedefs
+import codegen
 import svdparser
 import tables
 import utils

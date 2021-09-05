@@ -7,7 +7,7 @@ import regex
 import basetypes
 import strformat
 import utils
-import typedefs
+import codegen
 
 ###############################################################################
 # Private Procedures

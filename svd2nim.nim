@@ -15,7 +15,6 @@ import regex
 import json
 import basetypes
 import svdparser
-import typedefs
 import codegen
 import expansions
 import sets
@@ -307,7 +306,7 @@ proc main() =
   svd2nim - A SVD to Register memory maps generator for STM32.
 
   Usage:
-    svd2nim [--json] <svdFile>
+    svd2nim <svdFile>
     svd2nim [-u | --update]
     svd2nim [-p | --updatePatched]
     svd2nim (-h | --help)

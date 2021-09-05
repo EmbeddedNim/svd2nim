@@ -197,23 +197,26 @@ proc main() =
   svd2nim - Generate Nim peripheral register APIs for ARM using CMSIS-SVD files.
 
   Usage:
-    svd2nim <svdFile>
+    svd2nim [-o FILE] <SvdFile>
     svd2nim (-h | --help)
     svd2nim (-v | --version)
 
   Options:
-    -h --help           # Show this screen.
-    -v --version        # Show version.
+    -h --help           Show this screen.
+    -v --version        Show version.
+    -o FILE             Specify output file. (default: ./<device_name>.nim)
   """
 
   let args = docopt(help, version = "0.2.0")
+  #for (k, v) in args.pairs: echo fmt"{k}: {v}"
   # Get Parameters
-  if args.contains("<svdFile>"):
-    let dev = processSvd($args["<svdFile>"])
+  if args.contains("<SvdFile>"):
+    let
+      dev = processSvd($args["<SvdFile>"])
+      outFileName = if args["-o"]: $args["-o"] else: dev.metadata.name.toLower() & ".nim"
+      outf = open(outFileName, fmWrite)
 
-    var outf = open(dev.metadata.name.toLower() & ".nim",fmWrite)
     renderDevice(dev, outf)
-
   else:
     echo "Try: svd2nim -h"
 

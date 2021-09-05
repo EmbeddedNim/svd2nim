@@ -168,6 +168,12 @@ template write*(reg: GCLK_GENDIV_Type, val: GCLK_GENDIV_Fields) =
   volatileStore(reg.p, cast[uint32](val))
 ```
 
+**IMPORTANT NOTE**: [Due to a currently open Nim
+bug](https://github.com/nim-lang/Nim/issues/14623),
+calling these accessors from the top-level in a module results in incorrect
+codegen by the Nim compiler and C compiler errors. The workaround is simple:
+ensure that all calls are made from inside a `proc`.
+
 Note here that the type `GCLK_GENDIV_Fields` is used as a value type type
 by the accessors. For registers that define bitfields (SVD `field` elements),
 these object types are generated, suffixed with `_Fields`, and using the Nim
@@ -220,3 +226,29 @@ run-time errors caused by attempting to cast an invalid value on a read.
 Therefore, the field value enums are intended to be used as if they were
 plain `const` values, which is similar to how CMSIS C headers are structured.
 `ord` can be used to convert enum values to their corresponding integer value.
+
+A small usage example, writing and reading a register:
+
+```nim
+import atsamd21g18a
+
+proc main() =
+  # register access is wrapped in a proc due to https://github.com/nim-lang/Nim/issues/14623
+
+  NVMCTRL.CTRLB.write(NVMCTRL_CTRLB_Fields(
+    RWS: 1,       # Set a field directly using a numeric value
+    MANW: true,   # 1-bit fields are bools
+    SLEEPPRM: NVMCTRL_CTRLB_SLEEPPRM.WAKEONACCESS.ord,  # Set a field using an enum value and `ord`
+    READMODE: NVMCTRL_CTRLB_READMODE.NO_MISS_PENALTY.ord,
+    CACHEDIS: false
+  ));
+
+  let nvm = NVMCTRL.CTRLB.read()
+
+  # Compare a read value to an enum using `ord`:
+  if nvm.READMODE == NVMCTRL_CTRLB_READMODE.NO_MISS_PENALTY.ord:
+    discard
+
+when isMainModule:
+  main()
+```

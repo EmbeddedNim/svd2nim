@@ -12,16 +12,6 @@ import codegen
 ###############################################################################
 # Private Procedures
 ###############################################################################
-proc getText(element: XmlNode): string =
-  if element.isNil():
-    return "none"
-  return element.innerText()
-
-proc formatText(text: string): string =
-  var ftext = text.replace(re("[ \t\n]+"), " ") # Collapse whitespace
-  ftext = ftext.replace("\\n", "\n")
-  ftext = ftext.strip()
-  return ftext
 
 func parseHexOrDecInt(s: string) : int =
   # Parse string to integer. According to CMSIS spec, if the string
@@ -286,7 +276,7 @@ proc readSVD*(path: string): SvdDevice =
   result.cpu = SvdCpu(
     name: cpuNode.getChildTextExc("name"),
     revision: cpuNode.getChildTextExc("revision"),
-    endian: cpuNode.child("endian").getText(),
+    endian: cpuNode.getChildTextExc("endian"),
     mpuPresent: int(cpuNode.getChildTextExc("mpuPresent").parseBool()),
     fpuPresent: int(cpuNode.getChildTextExc("fpuPresent").parseBool()),
     nvicPrioBits: cpuNode.getChildTextExc("nvicPrioBits").parseHexOrDecInt(),

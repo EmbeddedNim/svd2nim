@@ -230,8 +230,26 @@ func createAccessors*(p: SvdPeripheral): OrderedTable[string, CodeGenProcDef] =
           fmt"volatileStore(reg.p, cast[{intname}](val))"
         else:
           "volatileStore(reg.p, val)"
-
       result[fmt"write[{reg.nimTypeName}]"] = writeTpl
+
+    if reg.isReadable and reg.isWritable:
+      var modTpl = CodeGenProcDef(
+        keyword: "template",
+        name: "modifyIt",
+        public: true,
+        args: @[
+          ("reg", reg.nimTypeName),
+          ("op", "untyped"),
+        ],
+        retType: "untyped".some,
+      )
+      modTpl.body = """
+      block:
+        var it {.inject.} = reg.read()
+        op
+        reg.write(it)
+      """.dedent().strip(leading=false)
+      result[fmt"modifyIt[{reg.nimTypeName}]"] = modTpl
 
 proc renderType*(typ: CodeGenTypeDef, tg: File) =
   let
@@ -355,7 +373,7 @@ proc renderProcDef*(prd: CodeGenProcDef, tg: File) =
     argString = prd.args.mapIt(it.name & ": " & it.typ).join(", ")
     retString = if prd.retType.isSome: ": " & prd.retType.get else: ""
     star = if prd.public: "*" else: ""
-  tg.writeLine(fmt"{prd.keyword} {prd.name}{star}({argString}){retString} = ")
+  tg.writeLine(fmt"{prd.keyword} {prd.name}{star}({argString}){retString} =")
   for line in prd.body.splitLines:
     tg.writeLine Indent & line
   tg.write "\n"

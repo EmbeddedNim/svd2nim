@@ -157,16 +157,33 @@ let GCLK* = GCLK_Type(
 As noted above, Registers are only meant to be read or written using accessor
 templates that are also generated. For each register object type, either a
 `read` template, a `write` template, or both may be generated, depeding on
-the register access permission defined by the SVD file. Example (for a
+the register access permissions defined by the SVD file. Example (for a
 read/write register):
 
 ```nim
-template read*(reg: GCLK_GENDIV_Type): GCLK_GENDIV_Fields = 
+template read*(reg: GCLK_GENDIV_Type): GCLK_GENDIV_Fields =
   cast[GCLK_GENDIV_Fields](volatileLoad(reg.p))
 
-template write*(reg: GCLK_GENDIV_Type, val: GCLK_GENDIV_Fields) = 
+template write*(reg: GCLK_GENDIV_Type, val: GCLK_GENDIV_Fields) =
   volatileStore(reg.p, cast[uint32](val))
 ```
+
+For convenience when doing a read-modify-write operation, a `modifyIt` template
+is also generated for read-write registers. Similarly to the the `*it` templates
+in Nim's `std/sequtils` module, `modifyIt` reads the register and stores its
+value in the `it` variable. The `op` parameter passed to the template can then
+modify `it`. Finally, `it` is written back to the register. Example template
+code:
+
+```nim
+template modifyIt*(reg: GCLK_GENDIV_Type, op: untyped): untyped =
+  block:
+    var it {.inject.} = reg.read()
+    op
+    reg.write(it)
+```
+
+See further below for usage examples of the acccessor templates.
 
 **IMPORTANT NOTE**: [Due to a currently open Nim
 bug](https://github.com/nim-lang/Nim/issues/14623),
@@ -174,10 +191,10 @@ calling these accessors from the top-level in a module results in incorrect
 codegen by the Nim compiler and C compiler errors. The workaround is simple:
 ensure that all calls are made from inside a `proc`.
 
-Note here that the type `GCLK_GENDIV_Fields` is used as a value type type
-by the accessors. For registers that define bitfields (SVD `field` elements),
-these object types are generated, suffixed with `_Fields`, and using the Nim
-`{.bitsize.}` pragma to provide access to each bitfield.
+Note above that the type `GCLK_GENDIV_Fields` is used as a value type by the
+accessors. For registers that define bitfields (SVD `field` elements), these
+object types, suffixed with `_Fields`, are generated. The Nim `{.bitsize.}`
+pragma is used to provide access to each bitfield.
 
 Accessors for registers which do not define fields use plain unsigned integers
 as value types (eg. `uint32` for 32-bit registers.) Registers which define a
@@ -227,26 +244,32 @@ Therefore, the field value enums are intended to be used as if they were
 plain `const` values, which is similar to how CMSIS C headers are structured.
 `ord` can be used to convert enum values to their corresponding integer value.
 
-A small usage example, writing and reading a register:
+A small usage example, inspired by [Thea Flowers's blog post on the SAMD21
+clock system](https://blog.thea.codes/understanding-the-sam-d21-clocks/):
 
 ```nim
 import atsamd21g18a
 
+# register access is wrapped in a proc due to https://github.com/nim-lang/Nim/issues/14623
 proc main() =
-  # register access is wrapped in a proc due to https://github.com/nim-lang/Nim/issues/14623
+  # Use modifyIt to modify two fields
+  NVMCTRL.CTRLB.modifyIt:
+    it.RWS = 1; # Directly set integer value
+    it.READMODE = NVMCTRL_CTRLB_READMODE.NO_MISS_PENALTY.ord # Use enum value with .ord
 
-  NVMCTRL.CTRLB.write(NVMCTRL_CTRLB_Fields(
-    RWS: 1,       # Set a field directly using a numeric value
-    MANW: true,   # 1-bit fields are bools
-    SLEEPPRM: NVMCTRL_CTRLB_SLEEPPRM.WAKEONACCESS.ord,  # Set a field using an enum value and `ord`
-    READMODE: NVMCTRL_CTRLB_READMODE.NO_MISS_PENALTY.ord,
-    CACHEDIS: false
-  ));
+  # Write full register.
+  # Note: Nim's default value for unspecified fields is 0 / false
+  SYSCTRL.XOSC32K.write(SYSCTRL_XOSC32K_Fields(
+    STARTUP: 0x7,
+    EN32K: true,
+    XTALEN: true,
+  ))
 
-  let nvm = NVMCTRL.CTRLB.read()
+  # Read bool field
+  while not SYSCTRL.PCLKSR.read().XOSC32KRDY: discard
 
-  # Compare a read value to an enum using `ord`:
-  if nvm.READMODE == NVMCTRL_CTRLB_READMODE.NO_MISS_PENALTY.ord:
+  # Read field and compare to enum value
+  if GCLK.GENCTRL.read().SRC == GCLK_GENCTRL_SRC.DFLL48M.ord:
     discard
 
 when isMainModule:

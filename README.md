@@ -46,15 +46,17 @@ The svd2nim binary will be produced in the `./build` subdirectory.
 ```
 svd2nim - Generate Nim peripheral register APIs for ARM using CMSIS-SVD files.
 
-Usage:
-   svd2nim [-o FILE] <SvdFile>
-   svd2nim (-h | --help)
-   svd2nim (-v | --version)
+  Usage:
+    svd2nim [options] <SvdFile>
+    svd2nim (-h | --help)
+    svd2nim (-v | --version)
 
-Options:
-   -h --help           Show this screen.
-   -v --version        Show version.
-   -o FILE             Specify output file. (default: ./<device_name>.nim)
+  Options:
+    -h --help           Show this screen.
+    -v --version        Show version.
+    -o FILE             Specify output file. (default: ./<device_name>.nim)
+    --ignorePrepend     Ignore peripheral <prependToName>
+    --ignoreAppend      Ignore peripheral <appendToName>
 ```
 
 ## Status

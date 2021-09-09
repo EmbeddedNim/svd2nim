@@ -1,13 +1,14 @@
-import basetypes
-import strformat
-import strutils
-import sequtils
-import algorithm
-import utils
-import tables
-import expansions
+
+import std/strformat
+import std/strutils
+import std/sequtils
+import std/algorithm
+import std/tables
+import std/sets
 import regex
-import sets
+import basetypes
+import utils
+import expansions
 
 const Indent = "  "
 
@@ -19,7 +20,7 @@ type TypeDefField* = object
   public*: bool
   typeName*: string
 
-type CodeGenTypeDef* = ref object
+type CodeGenTypeDef* = object
   # Nim object type definition
   name*: string
   public*: bool
@@ -38,6 +39,15 @@ type CodeGenProcDef* = object
   args*: seq[tuple[name: string, typ: string]]
   retType*: Option[string]
   body*: string
+
+type CodeGenOptions* = object
+  ignoreAppend*: bool
+  ignorePrepend*: bool
+
+var CgOpts: CodeGenOptions
+
+proc setOptions*(opts: CodeGenOptions) =
+  CgOpts = opts
 
 func appendTypeName*(parentName: string, name: string): string =
   if parentName.endsWith(typeSuffix):
@@ -66,47 +76,83 @@ func buildTypeName*(c: SvdCluster, parentTypeName: string): string =
 
 func intName(r: SvdRegister): string = "uint" & $r.properties.size
 
-func getTypeFields(n: SvdEntity, children: seq[SvdEntity]): seq[TypeDefField] =
-  case n.kind:
-  of {sePeripheral, seCluster}:
-    for cNode in children.sorted(cmpAddrOffset):
-      let typeName =
-        if cNode.isDimArray:
-          let dim = cNode.getDimGroup.dim.get
-          fmt"array[{dim}, {cNode.getNimTypeName}]"
-        else:
-          cNode.getNimTypeName
+func getDimTypeName[T: SvdRegister | SvdCluster](e: T): string =
+  if e.isDimArray:
+    let dim = e.dimGroup.dim.get
+    fmt"array[{dim}, {e.nimTypeName}]"
+  else:
+    e.nimTypeName
 
-      result.add TypeDefField(
-        name: cNode.getName,
+func getTypeFields[T: SvdPeripheral | SvdCluster](e: T, regPrefix: string, regSuffix: string): seq[TypeDefField] =
+  var fieldPairs: seq[tuple[f: TypeDefField, offset: int]]
+
+  for reg in e.registers:
+    fieldPairs.add (
+      TypeDefField(
+        name: regPrefix & reg.name.stripPlaceHolder & regSuffix,
         public: true,
-        typeName: typeName,
-      )
-  of seRegister:
-    # Registers have a single (private) field, the pointer
-    result.add TypeDefField(
-      name: "p",
-      public: false,
-      typeName: "ptr " & n.register.intName
+        typeName: reg.getDimTypeName
+      ),
+      reg.addressOffset
     )
 
-func createTypeDefs*(dev: SvdDevice): OrderedTable[string, CodeGenTypeDef] =
-  # Note: returns type definitions in the REVERSE order that they should be written
-  let
-    graph = dev.peripherals.buildEntityGraph()
-    periphNodes = toSeq(graph.items).filterIt(it.kind == sePeripheral)
+  for cls in e.clusters:
+    fieldPairs.add (
+      TypeDefField(
+        name: cls.name.stripPlaceHolder,
+        public: true,
+        typeName: cls.getDimTypeName
+      ),
+      cls.addressOffset
+    )
 
-  for pNode in periphNodes:
-    for n in graph.dfs(pNode):
-      let
-        tname = n.getNimTypeName
-        children = toSeq(graph.edges(n))
-      if tname notin result:
-        result[tname] = CodeGenTypeDef(
-          name: tname,
-          public: false,
-          fields: n.getTypeFields(children)
-        )
+  for fp in fieldPairs.sortedByIt(it.offset):
+    result.add fp.f
+
+func createRegisterType(reg: SvdRegister): CodeGenTypeDef =
+  result.name = reg.nimTypeName
+  result.public = false
+  result.fields.add TypeDefField(
+    name: "p",
+    public: false,
+    typeName: "ptr " & reg.intName
+  )
+
+proc createPeriphTypes(p: SvdPeripheral): seq[CodeGenTypeDef] =
+  let
+    regPrefix = if not CgOpts.ignorePrepend: p.prependToName.get("") else: ""
+    regSuffix = if not CgOpts.ignoreAppend: p.appendToName.get("") else: ""
+
+  result.add CodeGenTypeDef(
+    name: p.nimTypeName,
+    public: false,
+    fields: p.getTypeFields(regPrefix=regPrefix, regSuffix=regSuffix)
+  )
+
+  # Types are added to result in top down-order using DFS through nested
+  # clusters. We reverse at the end so that type defs in written in correct
+  # order in the generated Nim file.
+
+  for reg in p.registers: result.add(reg.createRegisterType())
+
+  var clusterStack = p.clusters
+  while clusterStack.len > 0:
+    let cls = clusterStack.pop
+    result.add CodeGenTypeDef(
+      name: cls.nimTypeName,
+      public: false,
+      fields: cls.getTypeFields(regPrefix=regPrefix, regSuffix=regSuffix)
+    )
+    for reg in cls.registers: result.add(reg.createRegisterType())
+    for child in cls.clusters: clusterStack.add child
+
+  result.reverse()
+
+proc createTypeDefs*(dev: SvdDevice): OrderedTable[string, CodeGenTypeDef] =
+  for periph in dev.peripherals:
+    for td in createPeriphTypes(periph):
+      if td.name notin result:
+        result[td.name] = td
 
 func size(f: SvdField): Natural =
   f.bitRange.msb - f.bitRange.lsb + 1
@@ -469,7 +515,7 @@ proc renderDevice*(d: SvdDevice, outf: File) =
 
   renderHeader("# Type definitions for peripheral registers", outf)
   let typeDefs = d.createTypeDefs()
-  for t in toSeq(typeDefs.values).reversed:
+  for t in toSeq(typeDefs.values):
     t.renderType(outf)
     outf.writeLine("")
 

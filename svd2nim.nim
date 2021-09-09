@@ -1,14 +1,14 @@
 #[
   Convert SVD file to nim register memory mappings
 ]#
-import strutils
-import tables
+import std/tables
+import std/strutils
+import std/strformat
 import docopt
 import basetypes
 import svdparser
 import codegen
 import expansions
-import strformat
 
 proc warnNotImplemented(dev: SvdDevice) =
   for p in dev.peripherals:
@@ -26,7 +26,7 @@ proc warnNotImplemented(dev: SvdDevice) =
         if field.enumValues.isSome and field.enumValues.get.derivedFrom.isSome:
           stderr.writeLine(fmt"WARNING: Register field {reg.name}.{field.name} of peripheral {p.name} contains a derived enumeration, not implemented.")
 
-proc processSvd(path: string): SvdDevice =
+proc processSvd*(path: string): SvdDevice =
   # Parse SVD file and apply some post-processing
   result = readSVD(path)
   warnNotImplemented result
@@ -47,7 +47,7 @@ proc main() =
   svd2nim - Generate Nim peripheral register APIs for ARM using CMSIS-SVD files.
 
   Usage:
-    svd2nim [-o FILE] <SvdFile>
+    svd2nim [options] <SvdFile>
     svd2nim (-h | --help)
     svd2nim (-v | --version)
 
@@ -55,10 +55,12 @@ proc main() =
     -h --help           Show this screen.
     -v --version        Show version.
     -o FILE             Specify output file. (default: ./<device_name>.nim)
+    --ignorePrepend     Ignore peripheral <prependToName>
+    --ignoreAppend      Ignore peripheral <appendToName>
   """
 
   let args = docopt(help, version = "0.2.0")
-  #for (k, v) in args.pairs: echo fmt"{k}: {v}"
+  #for (k, v) in args.pairs: echo fmt"{k}: {v}" # Dump args for debugging
   # Get Parameters
   if args.contains("<SvdFile>"):
     let
@@ -66,6 +68,12 @@ proc main() =
       outFileName = if args["-o"]: $args["-o"] else: dev.metadata.name.toLower() & ".nim"
       outf = open(outFileName, fmWrite)
 
+    let cgopts = CodeGenOptions(
+      ignoreAppend: args["--ignoreAppend"],
+      ignorePrepend: args["--ignorePrepend"]
+    )
+
+    setOptions cgopts
     renderDevice(dev, outf)
   else:
     echo "Try: svd2nim -h"

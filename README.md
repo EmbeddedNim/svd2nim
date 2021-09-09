@@ -35,7 +35,7 @@ Install Nim and Nimble: see https://nim-lang.org/install.html. Then,
 ```bash
 git clone https://github.com/auxym/svd2nim
 cd svd2nim
-nimble install
+nimble install -d
 nimble build
 ```
 

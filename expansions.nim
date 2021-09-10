@@ -266,7 +266,7 @@ func expandDimList[T: SvdCluster | SvdRegister](e: T): seq[T] =
     raise newException(SVDError, e.name & " has dim but no dimIncrement")
   let dIncr = e.dimGroup.dimIncrement.get
 
-  let dimIndex = toSeq(0 .. e.dimGroup.dim.get).mapIt($it)
+  let dimIndex = toSeq(0 ..< e.dimGroup.dim.get).mapIt($it)
   for i in 0..dimIndex.high:
     let idxName = dimIndex[i]
     var newElem: T

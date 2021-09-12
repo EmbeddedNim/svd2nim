@@ -1,4 +1,6 @@
-import unittest
+import std/unittest
+import std/sequtils
+import std/strutils
 import svdparser
 import expansions
 import basetypes
@@ -49,3 +51,25 @@ suite "Derivations":
 
       pmux1.properties.size == pmux0.properties.size
       pmux1.properties.access == pmux0.properties.access
+
+suite "Dim Lists":
+  setup:
+    let
+      samd21Periphs {.used.} =
+        readSVD("./tests/ATSAMD21G18A.svd").peripherals.expandAllDimLists
+
+  test "Register dim list expanded":
+    let
+      ac = samd21Periphs.filterIt(it.name == "AC")[0]
+      compctrl = ac.registers.filterIt(it.name.contains("COMPCTRL"))
+
+    check:
+      compctrl.len == 2
+      compctrl[0].name == "COMPCTRL0"
+      compctrl[1].name == "COMPCTRL1"
+      compctrl[1].addressOffset - compctrl[0].addressOffset == 4
+      compctrl[0].description == compctrl[1].description
+      compctrl[0].fields.len == compctrl[1].fields.len
+      compctrl[0].nimTypeName == compctrl[1].nimTypeName
+      compctrl[0].properties.size == compctrl[1].properties.size
+      compctrl[0].properties.access == compctrl[1].properties.access

@@ -35,7 +35,7 @@ suite "Create codegen typedefs":
       samd21Types["TC3_Type"].fields.mapIt(it.typeName) == @[
         "TcCount8_Type", "TcCount16_Type", "TcCount32_Type"
       ]
-      samd21Types["TcCount8_Type"].fields.len == 16
+      samd21Types["TcCount8_Type"].fields.len == 15
       samd21Types["TcCount8_COUNT_Type"].fields.len == 1
       samd21Types["TcCount8_COUNT_Type"].fields[0].typeName == "ptr uint8"
 

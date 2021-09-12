@@ -5,6 +5,8 @@ build/
 *.kate-swp
 *.backup
 
+scripts/addrs*
+scripts/ATSAMD21G18A.h
 scratch.nim
 atsamd*.*
 arm_example.*

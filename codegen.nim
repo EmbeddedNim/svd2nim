@@ -505,10 +505,11 @@ proc renderDevice*(d: SvdDevice, outf: File) =
   # CPU
     let cpuNameSan = d.cpu.name.replace(re"(M\d+)\+", "$1PLUS")
     outf.write("const $#_REV* = 0x0001\n" % cpuNameSan)
-    outf.write("const MPU_PRESENT* = $#\n" % d.cpu.mpuPresent.intToStr())
-    outf.write("const FPU_PRESENT* = $#\n" % d.cpu.fpuPresent.intToStr())
-    outf.write("const NVIC_PRIO_BITS* = $#\n" % d.cpu.nvicPrioBits.intToStr())
-    outf.write("const Vendor_SysTickConfig* = $#\n" % d.cpu.vendorSystickConfig.intToStr())
+    outf.write("const MPU_PRESENT* = $#\n" % $d.cpu.mpuPresent.int)
+    outf.write("const FPU_PRESENT* = $#\n" % $d.cpu.fpuPresent.int)
+    outf.write("const VTOR_PRESENT* = $#\n" % $d.cpu.vtorPresent.int)
+    outf.write("const NVIC_PRIO_BITS* = $#\n" % $d.cpu.nvicPrioBits.int)
+    outf.write("const Vendor_SysTickConfig* = $#\n" % $d.cpu.vendorSystickConfig.int)
 
   renderCortexMExceptionNumbers(d.cpu, outf)
   renderInterrupts(d, outf)

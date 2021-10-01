@@ -53,6 +53,13 @@ func getChildOrError(pNode: XmlNode, tag: string): XmlNode =
     let fline = splitLines($pNode)[0]
     raise newException(SVDError, fmt"Missing tag '{tag}' in element {fline}" )
 
+func getChildBoolOrDefault(n: XmlNode, tag: string, default: bool): bool =
+  let cld = n.child(tag)
+  if cld.isNil:
+    return default
+  else:
+    return cld.innerText.parseBool
+
 func attrOpt(n: XmlNode, name: string): Option[string] =
   # Return some(attr_value) if attr exists, otherwise none
   if isNil(n.attrs):
@@ -277,10 +284,11 @@ proc readSVD*(path: string): SvdDevice =
     name: cpuNode.getChildTextExc("name"),
     revision: cpuNode.getChildTextExc("revision"),
     endian: cpuNode.getChildTextExc("endian"),
-    mpuPresent: int(cpuNode.getChildTextExc("mpuPresent").parseBool()),
-    fpuPresent: int(cpuNode.getChildTextExc("fpuPresent").parseBool()),
+    mpuPresent: cpuNode.getChildTextExc("mpuPresent").parseBool,
+    fpuPresent: cpuNode.getChildTextExc("fpuPresent").parseBool(),
     nvicPrioBits: cpuNode.getChildTextExc("nvicPrioBits").parseHexOrDecInt(),
-    vendorSystickConfig: int(cpuNode.getChildTextExc("vendorSystickConfig").parseBool())
+    vendorSystickConfig: cpuNode.getChildTextExc("vendorSystickConfig").parseBool,
+    vtorPresent: cpuNode.getChildTextExc("vtorPresent").parseBool
   )
 
   let deviceRp = SvdRegisterProperties(size: 32, access: raReadWrite).updateProperties(xml)

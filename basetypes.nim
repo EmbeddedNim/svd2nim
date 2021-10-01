@@ -100,10 +100,11 @@ type
     name*: string
     revision*: string
     endian*: string
-    mpuPresent*: int
-    fpuPresent*: int
+    mpuPresent*: bool
+    fpuPresent*: bool
+    vtorPresent*: bool
     nvicPrioBits*: int
-    vendorSystickConfig*: int
+    vendorSystickConfig*: bool
 
 type
   SvdDevice* = ref object

@@ -288,7 +288,7 @@ proc readSVD*(path: string): SvdDevice =
     fpuPresent: cpuNode.getChildTextExc("fpuPresent").parseBool(),
     nvicPrioBits: cpuNode.getChildTextExc("nvicPrioBits").parseHexOrDecInt(),
     vendorSystickConfig: cpuNode.getChildTextExc("vendorSystickConfig").parseBool,
-    vtorPresent: cpuNode.getChildTextExc("vtorPresent").parseBool
+    vtorPresent: cpuNode.getChildBoolOrDefault("vtorPresent", true)
   )
 
   let deviceRp = SvdRegisterProperties(size: 32, access: raReadWrite).updateProperties(xml)

@@ -42,6 +42,19 @@ proc processSvd*(path: string): SvdDevice =
 # Main
 ###############################################################################
 
+proc getVersion(): string {.compileTime.} =
+  let
+    baseVersion = "0.2.1"
+    gitTags: seq[string] = staticExec("git tag -l --points-at HEAD").split()
+    prerelease = gitTags.find(baseVersion) < 0
+
+  result =
+    if prerelease:
+      let shortHash = staticExec "git rev-parse --short HEAD"
+      baseVersion & "-dev-" & shortHash
+    else:
+      baseVersion
+
 proc main() =
   let help = """
   svd2nim - Generate Nim peripheral register APIs for ARM using CMSIS-SVD files.
@@ -58,8 +71,7 @@ proc main() =
     --ignorePrepend     Ignore peripheral <prependToName>
     --ignoreAppend      Ignore peripheral <appendToName>
   """
-
-  let args = docopt(help, version = "0.2.0")
+  let args = docopt(help, version=getVersion())
   #for (k, v) in args.pairs: echo fmt"{k}: {v}" # Dump args for debugging
   # Get Parameters
   if args.contains("<SvdFile>"):

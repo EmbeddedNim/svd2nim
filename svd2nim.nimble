@@ -1,6 +1,5 @@
 # Package
-
-version     = "0.2.0"
+version     = "0.2.1"
 author      = "The svd2nim contributors"
 description = "Convert CMSIS ARM SVD files to nim register memory mappings"
 license     = "MIT"
@@ -19,6 +18,3 @@ task intTest, "Run integration test":
   exec "nimble build"
   exec "./build/svd2nim --ignorePrepend ./tests/ATSAMD21G18A.svd"
   exec "nim r ./tests/integration_test.nim"
-
-task hello, "This is a hello task":
-  echo("Hello World!")

@@ -19,14 +19,11 @@ the code was rewritten to achieve the following goals:
 
 * Provide a high-performance yet type-safe API for low level register access.
 
-## License
-
-Unless specified otherwise in specific files, svd2nim is distributed under the
-terms of the MIT license. See `LICENSE` file for the full terms and copyright
-notice.
-
-The SVD files under the *tests* directory are copyright of their respective
-authors and used under license, as specified in each file.
+This project also aims to provide Nim bindings for CMSIS `core_*.h` headers,
+which provides access to peripherals that are common to a given Cortex-M CPU,
+such as the NVIC (interrupt controller) and the SysTick timer. Currently only
+the `core_cm0plus.nim` module is provided (under the core directory) for
+Cortex-M0+ CPUs, but PRs are welcome for others.
 
 ## Building
 
@@ -63,24 +60,8 @@ svd2nim - Generate Nim peripheral register APIs for ARM using CMSIS-SVD files.
 
 svd2nim is considered to be **experimental** status. Feel free to try it, but be
 warned that it could generate entire incorrect code, including code that sets
-your microcontroller on fire.
-
-## Limitations
-
-The following CMSIS-SVD features are not implemented. Warnings will be produced
-if they are encountered.  However, searching through a large repository of SVD
-files (https://github.com/posborne/cmsis-svd) leads me to believe that these
-features are never, or very rarely, used in the wild.
-
-* `<field>` and `<enumeratedValues>` elements that are `derivedFrom`
-
-* `<field>` elements containing `<dim>`, used to generate arrays or lists
-  of similar elements. Note: `dim` registers, clusters and peripherals are
-  commonly used and supported (except for below).
-
-* `dim` arrays of peripherals. That is, `<peripheral>` elements with
-   names containing `[%s]`. `dim` lists of peripherals, using plain `%s`,
-   are supported.
+your microcontroller on fire. It has been shown to work for some [proof-of-concept
+code](https://github.com/auxym/nim-on-samd21) running on Microchip SAM D21 microcontrollers.
 
 ## API
 
@@ -246,8 +227,10 @@ Therefore, the field value enums are intended to be used as if they were
 plain `const` values, which is similar to how CMSIS C headers are structured.
 `ord` can be used to convert enum values to their corresponding integer value.
 
-A small usage example, inspired by [Thea Flowers's blog post on the SAMD21
-clock system](https://blog.thea.codes/understanding-the-sam-d21-clocks/):
+Below is small usage example, inspired by [Thea Flowers's blog post on the
+SAMD21 clock system](https://blog.thea.codes/understanding-the-sam-d21-clocks/).
+A slightly larger example, including higher-level macros for GPIO access, is
+available in the following repository: https://github.com/auxym/nim-on-samd21.
 
 ```nim
 import atsamd21g18a
@@ -277,3 +260,29 @@ proc main() =
 when isMainModule:
   main()
 ```
+
+## Limitations
+
+The following CMSIS-SVD features are not implemented. Warnings will be produced
+if they are encountered.  However, searching through a large repository of SVD
+files (https://github.com/posborne/cmsis-svd) leads me to believe that these
+features are never, or very rarely, used in the wild.
+
+* `<field>` and `<enumeratedValues>` elements that are `derivedFrom`
+
+* `<field>` elements containing `<dim>`, used to generate arrays or lists
+  of similar elements. Note: `dim` registers, clusters and peripherals are
+  commonly used and supported (except for below).
+
+* `dim` arrays of peripherals. That is, `<peripheral>` elements with
+   names containing `[%s]`. `dim` lists of peripherals, using plain `%s`,
+   are supported.
+
+## License
+
+Unless specified otherwise in specific files, svd2nim is distributed under the
+terms of the MIT license. See `LICENSE` file for the full terms and copyright
+notice.
+
+The SVD files under the *tests* directory are copyright of their respective
+authors and used under license, as specified in each file.

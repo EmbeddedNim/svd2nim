@@ -44,7 +44,7 @@ proc processSvd*(path: string): SvdDevice =
 
 proc getVersion(): string {.compileTime.} =
   let
-    baseVersion = "0.2.2"
+    baseVersion = "0.3.0"
     gitTags: seq[string] = staticExec("git tag -l --points-at HEAD").split()
     prerelease = gitTags.find(baseVersion) < 0
 

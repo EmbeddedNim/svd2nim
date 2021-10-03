@@ -26,8 +26,8 @@ suite "Create codegen typedefs":
       deviceTypes["TIMER0_Type"].fields[7].name == "RELOAD"
       deviceTypes["TIMER0_Type"].fields[7].typeName == "array[4, TIMER0_RELOAD_Type]"
       deviceTypes["TIMER0_COUNT_Type"].fields.len == 1
-      deviceTypes["TIMER0_COUNT_Type"].fields[0].name == "p"
-      deviceTypes["TIMER0_COUNT_Type"].fields[0].typeName == "ptr uint32"
+      deviceTypes["TIMER0_COUNT_Type"].fields[0].name == "loc"
+      deviceTypes["TIMER0_COUNT_Type"].fields[0].typeName == "uint"
 
       # Test with a cluster
       samd21Types["TC3_Type"].fields.len == 3
@@ -37,7 +37,8 @@ suite "Create codegen typedefs":
       ]
       samd21Types["TcCount8_Type"].fields.len == 15
       samd21Types["TcCount8_COUNT_Type"].fields.len == 1
-      samd21Types["TcCount8_COUNT_Type"].fields[0].typeName == "ptr uint8"
+      samd21Types["TcCount8_COUNT_Type"].fields[0].name == "loc"
+      samd21Types["TcCount8_COUNT_Type"].fields[0].typeName == "uint"
 
   test "Append and prepend register names":
     let samd21Types = samd21.createTypeDefs()

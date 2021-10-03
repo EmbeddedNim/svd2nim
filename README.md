@@ -102,11 +102,12 @@ contain either Registers or more Clusters. Per the CMSIS-SVD spec, Clusters may
 be nested arbitrarily deep.
 
 Register fields are also `object` definitions. However, Registers contain a
-single field, which is the pointer to the memory-mapped register. Example:
+single field, which is the address (`loc`) to the memory-mapped register,
+represented as `uint`. Example:
 
 ```nim
 type GCLK_GENDIV_Type = object
-  p: ptr uint32
+  loc: uint
 ```
 
 Note that the pointer field is *private*. Indeed, registers are only intended to
@@ -116,22 +117,23 @@ allows:
 * Using Nim's type system to enforce register access (read-only, write-only,
   read/write) permissions.
 
-* Automatically inserting `volatileLoad` and `volatileStore` calls for all
-  accesses.
+* Automatically casting the address to a correctly-typed pointer (eg
+  `ptr uint32`) and calling `volatileLoad` and `volatileStore` calls for reads
+  and writes.
 
 * Convenient access to bitfields.
 
-For each Peripheral, an instance of the object type is created and made
-available, containing register pointers as defined by the base address and
-offset in the SVD file. Example:
+For each Peripheral, a `const` instance of the object type is made available,
+containing registers as defined by the base address and offset in the SVD file.
+Example:
 
 ```nim
-let GCLK* = GCLK_Type(
-  CTRL: GCLK_CTRL_Type(p: cast[ptr uint8](0x40000c00)),
-  STATUS: GCLK_STATUS_Type(p: cast[ptr uint8](0x40000c01)),
-  CLKCTRL: GCLK_CLKCTRL_Type(p: cast[ptr uint16](0x40000c02)),
-  GENCTRL: GCLK_GENCTRL_Type(p: cast[ptr uint32](0x40000c04)),
-  GENDIV: GCLK_GENDIV_Type(p: cast[ptr uint32](0x40000c08)),
+const GCLK* = GCLK_Type(
+  CTRL: GCLK_CTRL_Type(loc: 0x40000c00),
+  STATUS: GCLK_STATUS_Type(loc: 0x40000c01),
+  CLKCTRL: GCLK_CLKCTRL_Type(loc: 0x40000c02),
+  GENCTRL: GCLK_GENCTRL_Type(loc: 0x40000c04),
+  GENDIV: GCLK_GENDIV_Type(loc: 0x40000c08),
 )
 ```
 
@@ -145,10 +147,10 @@ read/write register):
 
 ```nim
 template read*(reg: GCLK_GENDIV_Type): GCLK_GENDIV_Fields =
-  cast[GCLK_GENDIV_Fields](volatileLoad(reg.p))
+  cast[GCLK_GENDIV_Fields](volatileLoad(cast[ptr uint32](reg.loc)))
 
 template write*(reg: GCLK_GENDIV_Type, val: GCLK_GENDIV_Fields) =
-  volatileStore(reg.p, cast[uint32](val))
+  volatileStore(cast[ptr uint32](reg.loc), cast[uint32](val))
 ```
 
 For convenience when doing a read-modify-write operation, a `modifyIt` template
@@ -196,7 +198,7 @@ type GCLK_CLKCTRL_Fields* = object
   WRTLOCK* {.bitsize:1.}: bool
 ```
 
-Note: as per SVD conventions, unused bits are named `RESERVED` and marked
+Note: as per CMSIS conventions, unused bits are named `RESERVED` and marked
 private. Note also the type definitions for each field:
 
 * Fields of 1-bit size are automatically cast to `bool`.

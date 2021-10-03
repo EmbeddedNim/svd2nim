@@ -113,9 +113,9 @@ func createRegisterType(reg: SvdRegister): CodeGenTypeDef =
   result.name = reg.nimTypeName
   result.public = false
   result.fields.add TypeDefField(
-    name: "p",
+    name: "loc",
     public: false,
-    typeName: "ptr " & reg.intName
+    typeName: "uint"
   )
 
 proc createPeriphTypes(p: SvdPeripheral): seq[CodeGenTypeDef] =
@@ -233,7 +233,7 @@ func createFieldEnums*(p: SvdPeripheral): OrderedTable[string, CodeGenEnumDef] =
 
 func createAccessors*(p: SvdPeripheral): OrderedTable[string, CodeGenProcDef] =
   for reg in p.allRegisters:
-    let intname = "uint" & $reg.properties.size
+    let intname = reg.intName
     let valType =
       if reg.hasFields:
         reg.getFieldStructName
@@ -250,9 +250,9 @@ func createAccessors*(p: SvdPeripheral): OrderedTable[string, CodeGenProcDef] =
       )
       readTpl.body =
         if reg.hasFields:
-          fmt"cast[{valType}](volatileLoad(reg.p))"
+          fmt"cast[{valType}](volatileLoad(cast[ptr {intname}](reg.loc)))"
         else:
-          "volatileLoad(reg.p)"
+          fmt"volatileLoad(cast[ptr {intname}](reg.loc))"
       result[fmt"read[{reg.nimTypeName}]"] = readTpl
 
     if reg.isWritable:
@@ -267,9 +267,9 @@ func createAccessors*(p: SvdPeripheral): OrderedTable[string, CodeGenProcDef] =
       )
       writeTpl.body =
         if reg.hasFields:
-          fmt"volatileStore(reg.p, cast[{intname}](val))"
+          fmt"volatileStore(cast[ptr {intname}](reg.loc), cast[{intname}](val))"
         else:
-          "volatileStore(reg.p, val)"
+          fmt"volatileStore(cast[ptr {intname}](reg.loc), val)"
       result[fmt"write[{reg.nimTypeName}]"] = writeTpl
 
     if reg.isReadable and reg.isWritable:
@@ -309,8 +309,6 @@ proc renderRegister(
   baseAddress: Natural,
   tg: File) =
 
-  let intName = "uint" & $r.properties.size
-
   if r.isDimArray:
     tg.write("[\n")
     for arrIndex in 0 ..< (r.dimGroup.dim.get):
@@ -318,11 +316,11 @@ proc renderRegister(
                     r.addressOffset +
                     arrIndex * (r.dimGroup.dimIncrement.get)
       let locIndent = repeat(Indent, numIndent + 1)
-      tg.write(fmt"{locIndent}{r.nimTypeName}(p: cast[ptr {intName}]({address:#x}))," & "\n")
+      tg.write(fmt"{locIndent}{r.nimTypeName}(loc: {address:#x})," & "\n")
     tg.write(repeat(Indent, numIndent) & "]\n")
   else:
     let address = baseAddress + r.addressOffset
-    tg.write(fmt"{r.nimTypeName}(p: cast[ptr {intName}]({address:#x}))," & "\n")
+    tg.write(fmt"{r.nimTypeName}(loc: {address:#x})," & "\n")
 
 proc renderCluster(
   cluster: SvdCluster,
@@ -389,7 +387,7 @@ proc renderPeripheral*(p: SvdPeripheral, tg: File) =
   if p.isDimArray:
     # TODO: dim array of peripherals has not been tested. Find or create SVD snippet
     # using this codepath to test.
-    tg.writeLine(fmt"let {insName}* = [")
+    tg.writeLine(fmt"const {insName}* = [")
     for arrIndex in 0 ..< (p.dimGroup.dim.get):
       let address = p.baseAddress + arrIndex * p.dimGroup.dimIncrement.get
       tg.write(fmt"{Indent}{p.nimTypeName}(" & "\n")
@@ -397,7 +395,7 @@ proc renderPeripheral*(p: SvdPeripheral, tg: File) =
       tg.write(Indent & "),\n")
     tg.write(Indent & "]\n\n")
   else:
-    tg.writeLine(fmt"let {insName}* = {p.nimTypeName}(")
+    tg.writeLine(fmt"const {insName}* = {p.nimTypeName}(")
     renderFields(p, p.baseAddress, 1, tg)
     tg.write(")\n\n")
 

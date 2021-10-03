@@ -27,11 +27,12 @@ macro genAddressAsserts(): untyped =
   assert cAddrTable.len == 1258
   for (regName, regAddr) in cAddrTable.pairs:
     let
-      dotNode = parseStmt(regName & ".p")
-      castNode = nnkCast.newTree(newIdentNode("int"), dotNode)
-      eqNode = infix(castNode, "==", newIntLitNode(regAddr))
+      dotNode = parseStmt(regName & ".loc")
+      eqNode = infix(dotNode, "==", newIntLitNode(regAddr))
     result.add newCall("doAssert", eqNode)
-    #result.add newCall("echo", eqNode.toStrLit) # print out the asserts at runtime for debugging
+
+    # print out the asserts at runtime for debugging
+    #result.add newCall("echo", eqNode.toStrLit)
 
 suite "Integration tests":
 

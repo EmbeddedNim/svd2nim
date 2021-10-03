@@ -154,19 +154,8 @@ proc createTypeDefs*(dev: SvdDevice): OrderedTable[string, CodeGenTypeDef] =
       if td.name notin result:
         result[td.name] = td
 
-func size(f: SvdField): Natural =
+func bitsize(f: SvdField): Natural =
   f.bitRange.msb - f.bitRange.lsb + 1
-
-func nextIntSize(bitSize: (0..64)): Natural =
-  for i in [8, 16, 32, 64]:
-    if i >= bitsize: return i
-
-func bitRangeTypeString(bitSize: int): string =
-  let
-    intSize = nextIntSize(bitSize)
-    suffix = "u" & $intSize
-    hi = (1 shl bitSize) - 1
-  fmt"0{suffix} .. {hi}{suffix}"
 
 proc cmpLsb(a, b: SvdField): int =
   cmp(a.bitRange.lsb, b.bitRange.lsb)
@@ -198,7 +187,7 @@ func hasFields(r: SvdRegister): bool =
   # If defines a single field of the same size as the register, then
   # consider that there is no field.
   r.fields.len > 0 and
-  not (r.fields.len == 1 and r.fields[0].size == r.properties.size)
+  not (r.fields.len == 1 and r.fields[0].bitsize == r.properties.size)
 
 func getFieldStructName(reg: SvdRegister): string =
   reg.nimTypeName.appendTypeName("Fields")
@@ -213,9 +202,14 @@ func createBitFieldStructs*(p: SvdPeripheral): OrderedTable[string, CodeGenTypeD
     for field in reg.fields.padFields(reg.properties.size):
       td.fields.add TypeDefField(
         name: field.name,
-        bitsize: field.size.some,
+        bitsize: field.bitsize.some,
         public: not field.name.startsWith("RESERVED"),
-        typeName: if field.size == 1: "bool" else: bitRangeTypeString(field.size)
+        typeName:
+          if field.bitsize == 1:
+            "bool"
+          else:
+            let hi = (1 shl field.bitsize) - 1
+            fmt"0'u .. {hi}'u"
       )
     result[td.name] = td
 

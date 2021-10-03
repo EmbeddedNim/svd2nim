@@ -188,10 +188,10 @@ Example field object definition:
 
 ```nim
 type GCLK_CLKCTRL_Fields* = object
-  ID* {.bitsize:6.}: 0u8 .. 63u8
-  RESERVED {.bitsize:2.}: 0u8 .. 3u8
-  GEN* {.bitsize:4.}: 0u8 .. 15u8
-  RESERVED1 {.bitsize:2.}: 0u8 .. 3u8
+  ID* {.bitsize:6.}: 0'u .. 63'u
+  RESERVED {.bitsize:2.}: 0'u .. 3'u
+  GEN* {.bitsize:4.}: 0'u .. 15'u
+  RESERVED1 {.bitsize:2.}: 0'u .. 3'u
   CLKEN* {.bitsize:1.}: bool
   WRTLOCK* {.bitsize:1.}: bool
 ```
@@ -201,9 +201,9 @@ private. Note also the type definitions for each field:
 
 * Fields of 1-bit size are automatically cast to `bool`.
 
-* Larger fields are typed as subranges of the smallest unsigned integer that
-  can hold the value. This provides some type safety, as attempting to write
-  a larger value will generate a compile-time error.
+* Larger fields are typed as subranges of `uint`. This provides some type
+  safety, as attempting to write a larger value known at compile time will
+  generate a compiler error.
 
 For fields which define `enumeratedValues` in the SVD file, an `enum` type
 is also generated. Example:

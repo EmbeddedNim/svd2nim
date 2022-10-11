@@ -1,9 +1,9 @@
 import std/unittest
 import std/sequtils
 import std/tables
-import codegen
-import svd2nim
-import utils
+import ../codegen {.all.}
+import ../svd2nim
+import ../utils
 
 suite "Create codegen typedefs":
   setup:
@@ -65,3 +65,11 @@ suite "Create codegen typedefs":
       genEnum.fields[0].val == 0
       genEnum.fields[8].key == "GCLK8"
       genEnum.fields[8].val == 8
+
+suite "Misc codegen tests":
+  test "Sanitize Identifiers":
+    check:
+      sanitizeIdent("16k") == "x16k" # starts with number
+      sanitizeIdent("Trail_Underscore_") == "Trail_Underscore"
+      sanitizeIdent("Two__Underscores__") == "Two_Underscores"
+      sanitizeIdent("ADDR") == "ADDRx" # is a keyword

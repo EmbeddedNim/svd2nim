@@ -6,9 +6,9 @@ import std/algorithm
 import std/tables
 import std/sets
 import regex
-import basetypes
-import utils
-import expansions
+import ./basetypes
+import ./utils
+import ./expansions
 
 const Indent = "  "
 

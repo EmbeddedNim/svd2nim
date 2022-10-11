@@ -1,4 +1,3 @@
-
 import std/strformat
 import std/strutils
 import std/sequtils
@@ -490,6 +489,9 @@ proc renderInterrupts(dev: SvdDevice, outf: File) =
 proc renderDevice*(d: SvdDevice, outf: File) =
   outf.write("# Peripheral access API for $# microcontrollers (generated using svd2nim)\n\n" % d.metadata.name.toUpper())
   outf.write("import volatile\n\n")
+
+  # Supress name hints
+  outf.write("{.hint[name]: off.}\n\n")
 
   if not d.cpu.isNil():
     outf.write("# Some information about this device.\n")

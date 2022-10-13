@@ -1,10 +1,12 @@
-import basetypes
-import tables
-import sets
-import hashes
-import strutils
-import sequtils
-import strformat
+import std/tables
+import std/sets
+import std/hashes
+import std/strutils
+import std/sequtils
+import std/strformat
+import std/options
+
+import ./basetypes
 
 type SvdEntityKind* = enum
   sePeripheral, # Root of tree
@@ -21,10 +23,10 @@ type SvdEntity* = ref object
 func hash*(a: SvdEntity): Hash =
   a.fqName.hash
 
-type Graph*[T] = object
+type Graph[T] = object
   edgeTable: Table[T, HashSet[T]]
 
-type SvdGraph* = Graph[SvdEntity]
+type SvdGraph = Graph[SvdEntity]
 
 # For debugging
 func dumps[T](g: Graph[T]): string {.used.} =
@@ -32,29 +34,29 @@ func dumps[T](g: Graph[T]): string {.used.} =
     let vStr = toSeq(v).mapIt($it).join(", ")
     result = result & fmt"{$k} -> [{vStr}]" & "\n"
 
-func contains*[T](g: Graph[T], a: T): bool =
+func contains[T](g: Graph[T], a: T): bool =
   g.edgeTable.contains(a)
 
-iterator edges*[T](g: Graph[T], a: T): T =
+iterator edges[T](g: Graph[T], a: T): T =
   for b in g.edgeTable[a].items:
     yield b
 
-func `$`*(e: SvdEntity): string =
+func `$`(e: SvdEntity): string =
   e.fqName & " (" & $(e.hash) & ")"
 
-func addNode*[T](g: var Graph[T], a: T) =
+func addNode[T](g: var Graph[T], a: T) =
   discard g.edgeTable.hasKeyOrPut(a, initHashSet[T]())
 
-func addEdge*[T](g: var Graph[T], a, b: T) =
+func addEdge[T](g: var Graph[T], a, b: T) =
   if g.edgeTable.hasKeyOrPut(a, [b].toHashSet):
     g.edgeTable[a].incl b
   g.addNode b
 
-iterator items*[T](g: Graph[T]): T =
+iterator items[T](g: Graph[T]): T =
   for k in g.edgeTable.keys:
     yield k
 
-iterator dfs*[T](g: Graph[T], start: T): T =
+iterator dfs[T](g: Graph[T], start: T): T =
   var stack: seq[T]
   stack.add start
   while stack.len > 0:
@@ -77,7 +79,7 @@ func toEntity*(r: SvdRegister, scope: string): SvdEntity =
     fqName: scope & "." & r.name
   )
 
-func buildEntityGraph*(periphs: seq[SvdPeripheral]): SvdGraph =
+func buildEntityGraph(periphs: seq[SvdPeripheral]): SvdGraph =
   var stack: seq[SvdEntity]
   for p in periphs:
     let pNode = SvdEntity(kind: sePeripheral, periph: p, fqName: p.name)
@@ -129,25 +131,19 @@ proc cmpAddrOffset*(a, b: SvdEntity): int =
     of sePeripheral: doAssert false
   return cmp(aOffset, bOffset)
 
-func getNimTypeName*(n: SvdEntity): string =
-  case n.kind:
-  of sePeripheral: n.periph.nimTypeName
-  of seCluster: n.cluster.nimTypeName
-  of seRegister: n.register.nimTypeName
-
 func getName*(node: SvdEntity): string =
   result = case node.kind:
     of sePeripheral: node.periph.name
     of seRegister: node.register.name
     of seCluster: node.cluster.name
 
-func isDimArray*(e: SvdEntity): bool =
+func isDimArray(e: SvdEntity): bool =
   case e.kind
   of sePeripheral: e.periph.isDimArray
   of seCluster: e.cluster.isDimArray
   of seRegister: e.register.isDimArray
 
-func getDimGroup*(e: SvdEntity): SvdDimElementGroup =
+func getDimGroup(e: SvdEntity): SvdDimElementGroup =
   case e.kind
   of sePeripheral: e.periph.dimGroup
   of seCluster: e.cluster.dimGroup
@@ -226,7 +222,7 @@ proc expandDerives*(periphs: var seq[SvdPeripheral]) =
       doAssert p.clusters.len == 0
       p.registers = parent.registers.deepCopy
       p.clusters = parent.clusters.deepCopy
-      p.nimTypeName = parent.nimTypeName
+      p.baseName = parent.baseName
 
     of seCluster:
       let parent = parentEntity.cluster
@@ -241,7 +237,7 @@ proc expandDerives*(periphs: var seq[SvdPeripheral]) =
       doAssert c.clusters.len == 0
       c.registers = parent.registers.deepCopy
       c.clusters = parent.clusters.deepCopy
-      c.nimTypeName = parent.nimTypeName
+      c.baseName = parent.baseName
 
     of seRegister:
       let parent = parentEntity.register
@@ -257,7 +253,7 @@ proc expandDerives*(periphs: var seq[SvdPeripheral]) =
       # not supported. Would need to define a new type.
       doAssert r.fields.len == 0
       r.fields = parent.fields.deepCopy
-      r.nimTypeName = parent.nimTypeName
+      r.baseName = parent.baseName
 
 func expandDimList[T: SvdCluster | SvdRegister](e: T): seq[T] =
   if not e.isDimList: return @[e]

@@ -4,12 +4,19 @@ import std/tables
 import ../codegen {.all.}
 import ../svd2nim
 import ../utils
+import ../basetypes
 
 suite "Create codegen typedefs":
   setup:
     let
       device {.used.} = processSvd("./tests/ARM_Example.svd")
       samd21 {.used.} = processSvd("./tests/ATSAMD21G18A.svd")
+
+    for p in device.peripherals:
+      setAllTypeNames p
+    for p in samd21.peripherals:
+      setAllTypeNames p
+
 
   test "Create type defs":
     let

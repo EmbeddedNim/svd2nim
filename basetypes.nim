@@ -1,6 +1,5 @@
-import options
-import strutils
-export options
+import std/options
+import std/strutils
 
 type SvdBitrange* = tuple
   lsb, msb: Natural
@@ -48,6 +47,7 @@ type SvdRegisterProperties* = object
 type SvdRegister* = ref object
   # https://arm-software.github.io/CMSIS_5/SVD/html/elem_registers.html#elem_register
   name*: string
+  baseName*: string # Name without dim index
   derivedFrom*: Option[string]
   addressOffset*: Natural
   description*: Option[string]
@@ -59,6 +59,7 @@ type SvdRegister* = ref object
 type SvdCluster* {.acyclic.} = ref object
   # https://arm-software.github.io/CMSIS_5/SVD/html/elem_registers.html#elem_cluster
   name*: string
+  baseName*: string # Name without dim index
   derivedFrom*: Option[string]
   description*: Option[string]
   headerStructName*: Option[string]
@@ -76,6 +77,7 @@ type SvdInterrupt* = object
 type SvdPeripheral* = ref object
   # https://arm-software.github.io/CMSIS_5/SVD/html/elem_peripherals.html#elem_peripheral
   name*: string
+  baseName*: string # Name without dim index
   derivedFrom*: Option[string]
   description*: Option[string]
   baseAddress*: Natural

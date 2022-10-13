@@ -4,34 +4,37 @@ import std/sequtils
 import std/algorithm
 import std/tables
 import std/sets
+import std/options
+
 import regex
+
 import ./basetypes
 import ./utils
 import ./expansions
 
-const Indent = "  "
+const
+  Indent = "  "
+  TypeSuffix = "_Type"
 
-const typeSuffix*  = "_Type"
-
-type TypeDefField* = object
+type TypeDefField = object
   name*: string
   bitsize*: Option[Natural]
   public*: bool
   typeName*: string
 
-type CodeGenTypeDef* = object
+type CodeGenTypeDef = object
   # Nim object type definition
   name*: string
   public*: bool
   fields*: seq[TypeDefField]
 
-type CodeGenEnumDef* = object
+type CodeGenEnumDef = object
   # Nin enum type definition
   name*: string
   public*: bool
   fields*: seq[tuple[key: string, val: int]]
 
-type CodeGenProcDef* = object
+type CodeGenProcDef = object
   keyword*: string
   name*: string
   public*: bool
@@ -43,37 +46,51 @@ type CodeGenOptions* = object
   ignoreAppend*: bool
   ignorePrepend*: bool
 
-var CgOpts: CodeGenOptions
+
+var cgOpts: CodeGenOptions
+
 
 proc setOptions*(opts: CodeGenOptions) =
-  CgOpts = opts
+  cgOpts = opts
 
-func appendTypeName*(parentName: string, name: string): string =
-  if parentName.endsWith(typeSuffix):
-    result = parentName[0 .. ^(typeSuffix.len+1)]
+
+func appendTypeName(parentName: string, name: string): string =
+  if parentName.endsWith(TypeSuffix):
+    result = parentName[0 .. ^(TypeSuffix.len+1)]
   else:
     result = parentName
   result = result & "_" & name
 
-func buildTypeName*(p: SvdPeripheral): string =
+
+func buildTypeName(p: SvdPeripheral): string =
   if p.dimGroup.dimName.isSome:
     result = p.dimGroup.dimName.get
   elif p.headerStructName.isSome:
     result = p.headerStructName.get
   else:
-    result = p.name.stripPlaceHolder
-  result = result & typeSuffix
+    result = p.baseName
+  result = result & TypeSuffix
 
-func buildTypeName*(c: SvdCluster, parentTypeName: string): string =
+
+func buildTypeName(c: SvdCluster, parentTypeName: string): string =
   if c.dimGroup.dimName.isSome:
     result = c.dimGroup.dimName.get
   elif c.headerStructName.isSome:
     result = c.headerStructName.get
   else:
-    result = appendTypeName(parentTypeName, c.name.stripPlaceHolder)
-  result = result & typeSuffix
+    result = appendTypeName(parentTypeName, c.baseName)
+  result = result & TypeSuffix
+
+
+func buildTypeName(r: SvdRegister, parentTypeName: string): string =
+  if r.dimGroup.dimName.isSome:
+    result = r.dimGroup.dimName.get
+  else:
+    result = appendTypeName(parentTypeName, r.baseName) & TypeSuffix
+
 
 func intName(r: SvdRegister): string = "uint" & $r.properties.size
+
 
 func getDimTypeName[T: SvdRegister | SvdCluster](e: T): string =
   if e.isDimArray:
@@ -81,6 +98,7 @@ func getDimTypeName[T: SvdRegister | SvdCluster](e: T): string =
     fmt"array[{dim}, {e.nimTypeName}]"
   else:
     e.nimTypeName
+
 
 func getTypeFields[T: SvdPeripheral | SvdCluster](e: T, regPrefix: string, regSuffix: string): seq[TypeDefField] =
   var fieldPairs: seq[tuple[f: TypeDefField, offset: int]]
@@ -119,8 +137,8 @@ func createRegisterType(reg: SvdRegister): CodeGenTypeDef =
 
 proc createPeriphTypes(p: SvdPeripheral): seq[CodeGenTypeDef] =
   let
-    regPrefix = if not CgOpts.ignorePrepend: p.prependToName.get("") else: ""
-    regSuffix = if not CgOpts.ignoreAppend: p.appendToName.get("") else: ""
+    regPrefix = if not cgOpts.ignorePrepend: p.prependToName.get("") else: ""
+    regSuffix = if not cgOpts.ignoreAppend: p.appendToName.get("") else: ""
 
   result.add CodeGenTypeDef(
     name: p.nimTypeName,
@@ -147,11 +165,29 @@ proc createPeriphTypes(p: SvdPeripheral): seq[CodeGenTypeDef] =
 
   result.reverse()
 
-proc createTypeDefs*(dev: SvdDevice): OrderedTable[string, CodeGenTypeDef] =
+
+func setAllTypeNames(c: var SvdCluster, parentTypeName: string) =
+  ## Walk all child clusters and registers and set the nimTypeName field
+  c.nimTypeName = buildTypeName(c, parentTypeName)
+  for child in c.clusters.mitems: child.setAllTypeNames(c.nimTypeName)
+  for reg in c.registers.mitems:
+    reg.nimTypeName = buildTypeName(reg, c.nimTypeName)
+
+
+func setAllTypeNames(p: SvdPeripheral) =
+  ## Walk all child clusters and registers and set the nimTypeName field
+  p.nimTypeName = buildTypeName(p)
+  for c in p.clusters.mitems: c.setAllTypeNames(p.nimTypeName)
+  for reg in p.registers.mitems:
+    reg.nimTypeName = buildTypeName(reg, p.nimTypeName)
+
+
+proc createTypeDefs(dev: SvdDevice): OrderedTable[string, CodeGenTypeDef] =
   for periph in dev.peripherals:
     for td in createPeriphTypes(periph):
       if td.name notin result:
         result[td.name] = td
+
 
 func bitsize(f: SvdField): Natural =
   f.bitRange.msb - f.bitRange.lsb + 1
@@ -191,7 +227,7 @@ func hasFields(r: SvdRegister): bool =
 func getFieldStructName(reg: SvdRegister): string =
   reg.nimTypeName.appendTypeName("Fields")
 
-func createBitFieldStructs*(p: SvdPeripheral): OrderedTable[string, CodeGenTypeDef] =
+func createBitFieldStructs(p: SvdPeripheral): OrderedTable[string, CodeGenTypeDef] =
   for reg in p.allRegisters:
     if not reg.hasFields(): continue # Don't emit struct def if no fields
     var td = CodeGenTypeDef(
@@ -212,7 +248,7 @@ func createBitFieldStructs*(p: SvdPeripheral): OrderedTable[string, CodeGenTypeD
       )
     result[td.name] = td
 
-func createFieldEnums*(p: SvdPeripheral): OrderedTable[string, CodeGenEnumDef] =
+func createFieldEnums(p: SvdPeripheral): OrderedTable[string, CodeGenEnumDef] =
   for reg in p.allRegisters:
     for field in reg.fields:
       if field.enumValues.isNone: continue
@@ -230,7 +266,7 @@ func createFieldEnums*(p: SvdPeripheral): OrderedTable[string, CodeGenEnumDef] =
       # TODO: If enum already in table, validate that it is identical
       result[en.name] = en
 
-func createAccessors*(p: SvdPeripheral): OrderedTable[string, CodeGenProcDef] =
+func createAccessors(p: SvdPeripheral): OrderedTable[string, CodeGenProcDef] =
   for reg in p.allRegisters:
     let intname = reg.intName
     let valType =
@@ -290,7 +326,7 @@ func createAccessors*(p: SvdPeripheral): OrderedTable[string, CodeGenProcDef] =
       """.dedent().strip(leading=false)
       result[fmt"modifyIt[{reg.nimTypeName}]"] = modTpl
 
-proc renderType*(typ: CodeGenTypeDef, tg: File) =
+proc renderType(typ: CodeGenTypeDef, tg: File) =
   let
     star = if typ.public: "*" else: ""
     typName = typ.name.sanitizeIdent
@@ -380,7 +416,7 @@ proc renderCluster(
     renderFields(cluster, address, numIndent+1, tg)
     tg.write(repeat(Indent, numIndent) & "),\n")
 
-proc renderPeripheral*(p: SvdPeripheral, tg: File) =
+proc renderPeripheral(p: SvdPeripheral, tg: File) =
   let insName = p.name.stripPlaceHolder.sanitizeIdent
 
   if p.isDimArray:
@@ -398,14 +434,14 @@ proc renderPeripheral*(p: SvdPeripheral, tg: File) =
     renderFields(p, p.baseAddress, 1, tg)
     tg.write(")\n\n")
 
-proc renderEnum*(en: CodeGenEnumDef, tg: File) =
+proc renderEnum(en: CodeGenEnumDef, tg: File) =
   let star = if en.public: "*" else: ""
   tg.writeLine(fmt"type {en.name}{star} {{.pure.}} = enum")
   for (k, v) in en.fields:
     tg.writeLine(fmt"{Indent}{k} = {v:#x},")
   tg.write "\n"
 
-proc renderProcDef*(prd: CodeGenProcDef, tg: File) =
+proc renderProcDef(prd: CodeGenProcDef, tg: File) =
   let
     argString = prd.args.mapIt(it.name & ": " & it.typ).join(", ")
     retString = if prd.retType.isSome: ": " & prd.retType.get else: ""
@@ -486,6 +522,7 @@ proc renderInterrupts(dev: SvdDevice, outf: File) =
       outf.write("# $#" % iter.description.get)
     outf.write("\n")
 
+
 proc renderDevice*(d: SvdDevice, outf: File) =
   outf.write("# Peripheral access API for $# microcontrollers (generated using svd2nim)\n\n" % d.metadata.name.toUpper())
   outf.write("import std/volatile\n\n")
@@ -509,6 +546,8 @@ proc renderDevice*(d: SvdDevice, outf: File) =
   renderInterrupts(d, outf)
 
   renderHeader("# Type definitions for peripheral registers", outf)
+  for periph in d.peripherals:
+    setAllTypeNames periph
   let typeDefs = d.createTypeDefs()
   for t in toSeq(typeDefs.values):
     t.renderType(outf)

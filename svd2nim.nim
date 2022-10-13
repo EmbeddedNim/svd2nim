@@ -4,11 +4,14 @@
 import std/tables
 import std/strutils
 import std/strformat
+import std/options
+
 import docopt
-import basetypes
-import svdparser
-import codegen
-import expansions
+
+import ./basetypes
+import ./svdparser
+import ./codegen
+import ./expansions
 
 proc warnNotImplemented(dev: SvdDevice) =
   for p in dev.peripherals:

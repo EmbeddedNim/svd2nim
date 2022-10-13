@@ -1,13 +1,15 @@
-import strutils
-import xmlparser
-import xmltree
-import options
-import strtabs
+import std/strutils
+import std/xmlparser
+import std/xmltree
+import std/options
+import std/strtabs
+
 import regex
-import basetypes
-import strformat
-import utils
-import codegen
+
+import ./basetypes
+import ./strformat
+import ./utils
+
 
 ###############################################################################
 # Private Procedures
@@ -180,6 +182,7 @@ func parseRegister(rNode: XmlNode, parentRp: SvdRegisterProperties): SvdRegister
   result = new(SvdRegister)
 
   result.name = rNode.getChildTextExc("name")
+  result.baseName = result.name.stripPlaceHolder
   result.derivedFrom = rNode.attrOpt("derivedFrom")
   result.addressOffset = rNode.getChildTextExc("addressOffset").parseHexOrDecInt.Natural
   result.description = rNode.getChildTextOpt("description")
@@ -200,6 +203,7 @@ func parseCluster(cNode: XmlNode, parentRp: SvdRegisterProperties): SvdCluster =
   result = new(SvdCluster)
 
   result.name = cNode.getChildTextExc("name")
+  result.baseName = result.name.stripPlaceHolder
   result.derivedFrom = cNode.attrOpt("derivedFrom")
   result.description = cNode.getChildTextOpt("description")
   result.headerStructName = cNode.getChildTextOpt("headerStructName")
@@ -213,29 +217,13 @@ func parseCluster(cNode: XmlNode, parentRp: SvdRegisterProperties): SvdCluster =
 
   result.dimGroup = cNode.parseDimElementGroup()
 
-func buildTypeName(r: SvdRegister, parentTypeName: string): string =
-  if r.dimGroup.dimName.isSome:
-    result = r.dimGroup.dimName.get
-  else:
-    result = appendTypeName(parentTypeName, r.name.stripPlaceHolder) & typeSuffix
-
-func setAllTypeNames(c: var SvdCluster, parentTypeName: string) =
-  c.nimTypeName = buildTypeName(c, parentTypeName)
-  for child in c.clusters.mitems: child.setAllTypeNames(c.nimTypeName)
-  for reg in c.registers.mitems:
-    reg.nimTypeName = buildTypeName(reg, c.nimTypeName)
-
-func setAllTypeNames(p: var SvdPeripheral) =
-  p.nimTypeName = buildTypeName(p)
-  for c in p.clusters.mitems: c.setAllTypeNames(p.nimTypeName)
-  for reg in p.registers.mitems:
-    reg.nimTypeName = buildTypeName(reg, p.nimTypeName)
 
 func parsePeripheral(pNode: XmlNode, parentRp: SvdRegisterProperties): SvdPeripheral =
   assert pNode.tag == "peripheral"
   result = new(SvdPeripheral)
 
   result.name = pNode.getChildTextExc("name")
+  result.baseName = result.name.stripPlaceHolder
   result.derivedFrom = pNode.attrOpt("derivedFrom")
   result.description = pNode.getChildTextOpt("description")
   result.baseAddress = pNode.getChildTextExc("baseAddress").parseHexOrDecInt.Natural
@@ -260,7 +248,7 @@ func parsePeripheral(pNode: XmlNode, parentRp: SvdRegisterProperties): SvdPeriph
       result.registers.add registerNode.parseRegister(rp)
 
   result.dimGroup = pNode.parseDimElementGroup()
-  result.setAllTypeNames()
+
 
 ###############################################################################
 # Public Procedures
@@ -294,5 +282,3 @@ proc readSVD*(path: string): SvdDevice =
   let deviceRp = SvdRegisterProperties(size: 32, access: raReadWrite).updateProperties(xml)
   for pNode in xml.getChildOrError("peripherals").findAllDirect("peripheral"):
     result.peripherals.add pNode.parsePeripheral(deviceRp)
-
-export options

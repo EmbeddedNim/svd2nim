@@ -1,8 +1,9 @@
 import std/unittest
 import std/sequtils
 import std/strutils
+import std/options
 import ../svdparser
-import ../expansions
+import ../expansions {.all.}
 import ../basetypes
 import ../utils
 

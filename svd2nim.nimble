@@ -1,5 +1,5 @@
 # Package
-version     = "0.3.0"
+version     = "0.4.0"
 author      = "The svd2nim contributors"
 description = "Convert CMSIS ARM SVD files to nim register memory mappings"
 license     = "MIT"

@@ -5,12 +5,14 @@ import std/algorithm
 import std/tables
 import std/sets
 import std/options
+import std/bitops
+import std/os
 
 import regex
 
 import ./basetypes
 import ./utils
-import ./expansions
+import ./cpuirq
 
 const
   Indent = "  "
@@ -18,7 +20,6 @@ const
 
 type TypeDefField = object
   name*: string
-  bitsize*: Option[Natural]
   public*: bool
   typeName*: string
 
@@ -34,20 +35,42 @@ type CodeGenEnumDef = object
   public*: bool
   fields*: seq[tuple[key: string, val: int]]
 
+type CodeGenDistinctDef = object
+  # Nin enum type definition
+  name: string
+  public: bool
+  baseType: string
+
+type CodeGenProcDefArg = object
+  name: string
+  typ: string
+  defaultVal: Option[string]
+
 type CodeGenProcDef = object
   keyword*: string
   name*: string
   public*: bool
-  args*: seq[tuple[name: string, typ: string]]
-  retType*: Option[string]
+  args*: seq[CodeGenProcDefArg]
+  retType*: string
+  pragma*: seq[string]
   body*: string
 
 type CodeGenOptions* = object
+  includeCore*: bool
   ignoreAppend*: bool
   ignorePrepend*: bool
 
 
 var cgOpts: CodeGenOptions
+
+
+converter toCodeGenProcDefArg(t: (string, string)): CodeGenProcDefArg =
+  result = CodeGenProcDefArg(name: t[0], typ: t[1], defaultVal: string.none)
+
+
+converter toCodeGenProcDefArg(tseq: seq[(string, string)]): seq[CodeGenProcDefArg] =
+  for t in tseq:
+    result.add CodeGenProcDefArg(name: t[0], typ: t[1], defaultVal: string.none)
 
 
 proc setOptions*(opts: CodeGenOptions) =
@@ -69,65 +92,63 @@ func buildTypeName(p: SvdPeripheral): string =
     result = p.headerStructName.get
   else:
     result = p.baseName
-  result = result & TypeSuffix
+  result = result.sanitizeIdent & TypeSuffix
 
 
-func buildTypeName(c: SvdCluster, parentTypeName: string): string =
-  if c.dimGroup.dimName.isSome:
-    result = c.dimGroup.dimName.get
-  elif c.headerStructName.isSome:
+func buildTypeName(c: SvdRegisterTreeNode, parentTypeName: string): string =
+  if c.kind == rnkCluster and c.headerStructName.isSome:
     result = c.headerStructName.get
   else:
     result = appendTypeName(parentTypeName, c.baseName)
-  result = result & TypeSuffix
+  result = result.sanitizeIdent & TypeSuffix
 
 
-func buildTypeName(r: SvdRegister, parentTypeName: string): string =
-  if r.dimGroup.dimName.isSome:
-    result = r.dimGroup.dimName.get
-  else:
-    result = appendTypeName(parentTypeName, r.baseName) & TypeSuffix
-
-
-func intName(r: SvdRegister): string = "uint" & $r.properties.size
-
-
-func getDimTypeName[T: SvdRegister | SvdCluster](e: T): string =
+func getDimArrayTypeExpr[T: SomeSvdDimable](e: T, typeName: string): string =
   if e.isDimArray:
     let dim = e.dimGroup.dim.get
-    fmt"array[{dim}, {e.nimTypeName}]"
+    fmt"array[{dim}, {typeName}]"
   else:
-    e.nimTypeName
+    typeName
 
 
-func getTypeFields[T: SvdPeripheral | SvdCluster](e: T, regPrefix: string, regSuffix: string): seq[TypeDefField] =
-  var fieldPairs: seq[tuple[f: TypeDefField, offset: int]]
+proc getRegisterPrefixSuffix(p: SvdPeripheral): (string, string) =
+  let
+    regPrefix = if not cgOpts.ignorePrepend: p.prependToName.get("") else: ""
+    regSuffix = if not cgOpts.ignoreAppend: p.appendToName.get("") else: ""
+  return (regPrefix, regSuffix)
 
-  for reg in e.registers:
-    fieldPairs.add (
-      TypeDefField(
-        name: regPrefix & reg.name.stripPlaceHolder & regSuffix,
-        public: true,
-        typeName: reg.getDimTypeName
-      ),
-      reg.addressOffset
-    )
 
-  for cls in e.clusters:
-    fieldPairs.add (
-      TypeDefField(
-        name: cls.name.stripPlaceHolder,
-        public: true,
-        typeName: cls.getDimTypeName
-      ),
-      cls.addressOffset
-    )
+proc fieldName(dev: SvdDevice, n: SvdRegisterTreeNode): string =
+  case n.kind:
+  of rnkRegister:
+    let
+      parentPeriph = dev.peripherals[parentPeripheral(n.id)]
+      (regPrefix, regSuffix) = parentPeriph.getRegisterPrefixSuffix
+    result = regPrefix & n.name & regSuffix
+  of rnkCluster:
+    # SVD spec says that appendToName/prependToName applies to "registers"
+    # TODO: Check what SVDCONV does and ensure that they don't apply to clusters
+    result = n.name
+  result = result.sanitizeIdent
 
-  for fp in fieldPairs.sortedByIt(it.offset):
-    result.add fp.f
 
-func createRegisterType(reg: SvdRegister): CodeGenTypeDef =
-  result.name = reg.nimTypeName
+proc getTypeFields[T: SvdRegisterParent](e: T, typeNames: Table[SvdId, string],
+                                         dev: SvdDevice): seq[TypeDefField] =
+  let children = block:
+    var c = toSeq e.iterRegisters
+    c.sort cmpAddrOffset
+    c
+
+  for c in children:
+    let
+      fieldName = dev.fieldName(c)
+      fieldType = getDimArrayTypeExpr(c, typeNames[c.id])
+      def = TypeDefField(name: fieldName, typeName: fieldType, public: true)
+    result.add def
+
+
+func createRegisterType(name: string): CodeGenTypeDef =
+  result.name = name
   result.public = false
   result.fields.add TypeDefField(
     name: "loc",
@@ -135,196 +156,85 @@ func createRegisterType(reg: SvdRegister): CodeGenTypeDef =
     typeName: "uint"
   )
 
-proc createPeriphTypes(p: SvdPeripheral): seq[CodeGenTypeDef] =
-  let
-    regPrefix = if not cgOpts.ignorePrepend: p.prependToName.get("") else: ""
-    regSuffix = if not cgOpts.ignoreAppend: p.appendToName.get("") else: ""
 
-  result.add CodeGenTypeDef(
-    name: p.nimTypeName,
-    public: false,
-    fields: p.getTypeFields(regPrefix=regPrefix, regSuffix=regSuffix)
-  )
+## Assign type names for all SVD ids
+proc buildTypeMap(dev: SvdDevice): Table[SvdId, string] =
+  # Pass 1
+  for periph in dev.peripherals.values:
+    if periph.typeBase.isNone:
+      result[periph.id] = buildTypeName periph
+    for regNode in periph.walkRegisters:
+      if regNode.typeBase.isNone:
+        result[regNode.id] = buildTypeName(regNode, result[regNode.id.parent])
 
-  # Types are added to result in top down-order using DFS through nested
-  # clusters. We reverse at the end so that type defs in written in correct
-  # order in the generated Nim file.
-
-  for reg in p.registers: result.add(reg.createRegisterType())
-
-  var clusterStack = p.clusters
-  while clusterStack.len > 0:
-    let cls = clusterStack.pop
-    result.add CodeGenTypeDef(
-      name: cls.nimTypeName,
-      public: false,
-      fields: cls.getTypeFields(regPrefix=regPrefix, regSuffix=regSuffix)
-    )
-    for reg in cls.registers: result.add(reg.createRegisterType())
-    for child in cls.clusters: clusterStack.add child
-
-  result.reverse()
-
-
-func setAllTypeNames(c: var SvdCluster, parentTypeName: string) =
-  ## Walk all child clusters and registers and set the nimTypeName field
-  c.nimTypeName = buildTypeName(c, parentTypeName)
-  for child in c.clusters.mitems: child.setAllTypeNames(c.nimTypeName)
-  for reg in c.registers.mitems:
-    reg.nimTypeName = buildTypeName(reg, c.nimTypeName)
-
-
-func setAllTypeNames(p: SvdPeripheral) =
-  ## Walk all child clusters and registers and set the nimTypeName field
-  p.nimTypeName = buildTypeName(p)
-  for c in p.clusters.mitems: c.setAllTypeNames(p.nimTypeName)
-  for reg in p.registers.mitems:
-    reg.nimTypeName = buildTypeName(reg, p.nimTypeName)
-
-
-proc createTypeDefs(dev: SvdDevice): OrderedTable[string, CodeGenTypeDef] =
-  for periph in dev.peripherals:
-    for td in createPeriphTypes(periph):
-      if td.name notin result:
-        result[td.name] = td
-
-
-func bitsize(f: SvdField): Natural =
-  f.bitRange.msb - f.bitRange.lsb + 1
-
-proc cmpLsb(a, b: SvdField): int =
-  cmp(a.bitRange.lsb, b.bitRange.lsb)
-
-func padFields(fields: seq[SvdField], regSize: Natural): seq[SvdField] =
-  # Create RESERVED fields for padding bitfield enums
-  let tmp = fields.sorted(cmpLsb)
-  var
-    prevMsb = -1
-    rsvCount = 0
-  for fd in tmp:
-    let curLsb = fd.bitRange.lsb
-    if curLsb > prevMsb + 1:
-      result.add SvdField(
-        name: "RESERVED" & (if rsvCount == 0: "" else: $rsvCount),
-        bitRange: (lsb: (prevMsb+1).Natural, msb: (curLsb-1).Natural),
-      )
-      inc rsvCount
-    prevMsb = fd.bitRange.msb
-    result.add fd
-  if prevMsb < (regSize - 1):
-    # pad end of register
-    result.add SvdField(
-      name: "RESERVED" & (if rsvCount == 0: "" else: $rsvCount),
-      bitRange: (lsb: (prevMsb+1).Natural, msb: (regSize-1).Natural),
-    )
-
-func hasFields(r: SvdRegister): bool =
-  # If defines a single field of the same size as the register, then
-  # consider that there is no field.
-  r.fields.len > 0 and
-  not (r.fields.len == 1 and r.fields[0].bitsize == r.properties.size)
-
-func getFieldStructName(reg: SvdRegister): string =
-  reg.nimTypeName.appendTypeName("Fields")
-
-func createBitFieldStructs(p: SvdPeripheral): OrderedTable[string, CodeGenTypeDef] =
-  for reg in p.allRegisters:
-    if not reg.hasFields(): continue # Don't emit struct def if no fields
-    var td = CodeGenTypeDef(
-      name: reg.getFieldStructName,
-      public: true
-    )
-    for field in reg.fields.padFields(reg.properties.size):
-      td.fields.add TypeDefField(
-        name: field.name,
-        bitsize: field.bitsize.some,
-        public: not field.name.startsWith("RESERVED"),
-        typeName:
-          if field.bitsize == 1:
-            "bool"
-          else:
-            let hi = (1 shl field.bitsize) - 1
-            fmt"0'u .. {hi}'u"
-      )
-    result[td.name] = td
-
-func createFieldEnums(p: SvdPeripheral): OrderedTable[string, CodeGenEnumDef] =
-  for reg in p.allRegisters:
-    for field in reg.fields:
-      if field.enumValues.isNone: continue
-      let svdEnum = field.enumValues.get
-      var en: CodeGenEnumDef
-      en.public = true
-      en.name =
-        if svdEnum.headerEnumName.isSome:
-          svdEnum.headerEnumName.get
-        else:
-          appendTypeName(reg.nimTypeName, field.name)
-
-      for (k, v) in svdEnum.values:
-        en.fields.add (key: k.sanitizeIdent, val: v)
-      # TODO: If enum already in table, validate that it is identical
-      result[en.name] = en
-
-func createAccessors(p: SvdPeripheral): OrderedTable[string, CodeGenProcDef] =
-  for reg in p.allRegisters:
-    let intname = reg.intName
-    let valType =
-      if reg.hasFields:
-        reg.getFieldStructName
+  # Pass 2
+  for periph in dev.peripherals.values:
+    if periph.id notin result:
+      assert periph.typeBase.isSome
+      if periph.typeBase.get in result:
+        result[periph.id] = result[periph.typeBase.get]
       else:
-        intname
+        let tname = buildTypeName periph
+        result[periph.id] = tname
+        result[periph.typeBase.get] = tname
 
-    if reg.isReadable:
-      var readTpl = CodeGenProcDef(
-        keyword: "template",
-        name: "read",
-        public: true,
-        args: @[("reg", reg.nimTypeName)],
-        retType: valType.some,
-      )
-      readTpl.body =
-        if reg.hasFields:
-          fmt"cast[{valType}](volatileLoad(cast[ptr {intname}](reg.loc)))"
+    for regNode in periph.walkRegisters:
+      if regNode.id notin result:
+        assert regNode.typeBase.isSome
+        if regNode.typeBase.get in result:
+          result[regNode.id] = result[regNode.typeBase.get]
         else:
-          fmt"volatileLoad(cast[ptr {intname}](reg.loc))"
-      result[fmt"read[{reg.nimTypeName}]"] = readTpl
+          let tname = buildTypeName(regNode, result[regNode.id.parent])
+          result[regNode.id] = tname
+          result[regNode.typeBase.get] = tname
 
-    if reg.isWritable:
-      var writeTpl = CodeGenProcDef(
-        keyword: "template",
-        name: "write",
-        public: true,
-        args: @[
-          ("reg", reg.nimTypeName),
-          ("val", valType),
-        ],
-      )
-      writeTpl.body =
-        if reg.hasFields:
-          fmt"volatileStore(cast[ptr {intname}](reg.loc), cast[{intname}](val))"
-        else:
-          fmt"volatileStore(cast[ptr {intname}](reg.loc), val)"
-      result[fmt"write[{reg.nimTypeName}]"] = writeTpl
 
-    if reg.isReadable and reg.isWritable:
-      var modTpl = CodeGenProcDef(
-        keyword: "template",
-        name: "modifyIt",
-        public: true,
-        args: @[
-          ("reg", reg.nimTypeName),
-          ("op", "untyped"),
-        ],
-        retType: "untyped".some,
-      )
-      modTpl.body = """
-      block:
-        var it {.inject.} = reg.read()
-        op
-        reg.write(it)
-      """.dedent().strip(leading=false)
-      result[fmt"modifyIt[{reg.nimTypeName}]"] = modTpl
+proc createTypeDefs(dev: SvdDevice, names: Table[SvdId, string]):
+                    seq[CodeGenTypeDef] =
+  var knownTypeDefs: Hashset[string]
+
+  for periph in dev.peripherals.values:
+    let periphTypeName = names[periph.id]
+    if periphTypeName in knownTypeDefs:
+      continue
+    else:
+      knownTypeDefs.incl periphTypeName
+
+    var pdefs: seq[CodeGenTypeDef]
+    pdefs.add CodeGenTypeDef(
+      name: periphTypeName,
+      public: false,
+      fields: getTypeFields(periph, names, dev)
+    )
+
+    # Can't use walkRegisters here in order to preserve correct ordering
+    # Use DFS then reverse so that type dependency order is correct.
+    var regstack = toSeq(periph.iterRegisters)
+    while regstack.len > 0:
+      let
+        regNode = regstack.pop
+        tname = names[regNode.id]
+
+      if tname in knownTypeDefs:
+        continue
+      else:
+        knownTypeDefs.incl tname
+
+      case regNode.kind:
+      of rnkCluster:
+        pdefs.add CodeGenTypeDef(
+          name: tname,
+          public: false,
+          fields: getTypeFields(regNode, names, dev)
+        )
+        for child in regNode.iterRegisters:
+          regstack.add child
+      of rnkRegister:
+        pdefs.add createRegisterType(tname)
+
+    for td in pdefs.ritems:
+      result.add td
+
 
 proc renderType(typ: CodeGenTypeDef, tg: File) =
   let
@@ -335,66 +245,351 @@ proc renderType(typ: CodeGenTypeDef, tg: File) =
     let
       fstar = if f.public: "*" else: ""
       fname = f.name.stripPlaceHolder.sanitizeIdent
-      prag = if f.bitsize.isSome: fmt" {{.bitsize:{f.bitsize.get}.}}" else: ""
-    tg.writeLine(Indent & fmt"{fName}{fstar}{prag}: {f.typeName}")
+    tg.writeLine(Indent & fmt"{fName}{fstar}: {f.typeName}")
 
-proc renderRegister(
-  r: SvdRegister,
-  numIndent: Natural,
-  baseAddress: Natural,
-  tg: File) =
+func bitsize(f: SvdField): Natural =
+  f.msb - f.lsb + 1
 
-  if r.isDimArray:
+
+func hasFields(r: SvdRegisterTreeNode, rprops: ResolvedRegProperties): bool =
+  # If defines a single field of the same size as the register, then
+  # consider that there is no field.
+  assert r.kind == rnkRegister
+  result = r.fields.len > 0 and
+    not (r.fields.len == 1 and r.fields[0].bitsize == rprops.size)
+
+
+func getEnumTypeName(enm: SvdFieldEnum, fieldName: string, regType: string): string =
+  if enm.headerEnumName.isSome:
+    enm.headerEnumName.get
+  else:
+    appendTypeName(regType, fieldName)
+
+
+func getEnumPrefix(enmDef: CodeGenEnumDef): string =
+  var lastPart = enmDef.name.split("_")[^1]
+  while lastPart[0] notin Letters and lastPart.len > 0:
+    lastPart = lastPart[1 .. lastPart.high]
+
+  result =
+    if lastPart.len > 0:
+      lastPart[0 .. min(lastPart.high, 2)].toLowerAscii
+    else:
+      "x"
+
+
+func createEnum(field: SvdField, regType: string, codegenSymbols: HashSet[string]): CodeGenEnumDef =
+  let svdEnum = field.enumValues.get
+
+  var needsPrefix = false
+  result.public = true
+  result.name = getEnumTypeName(svdEnum, field.name, regType)
+  for (k, v) in svdEnum.values:
+    let cgKey = k.sanitizeIdent
+    result.fields.add (cgKey, v)
+
+    if cgKey[0] notin Letters or cgKey in codegenSymbols:
+      needsPrefix = true
+
+  if needsPrefix:
+    let prefix = getEnumPrefix(result)
+    for entry in result.fields.mitems:
+      entry.key = prefix & entry.key
+
+
+func createFieldEnums(periph: SvdPeripheral, types: Table[SvdId, string],
+                      codegenSymbols: HashSet[string]):
+                      OrderedTable[string, CodeGenEnumDef] =
+  var regset: HashSet[string]
+  for reg in periph.walkRegistersOnly:
+    let typeName = types[reg.id]
+    if typeName in regset:
+      continue
+    else:
+      regset.incl typeName
+
+    for field in reg.fields:
+      if field.enumValues.isSome:
+        let en = createEnum(field, typeName, codegenSymbols)
+        result[en.name] = en
+
+
+func intname(size: Natural): string =
+  "uint" & $size
+
+
+func getRegValueType(reg: SvdRegisterTreeNode, typeName: string, props: ResolvedRegProperties): string =
+  assert reg.kind == rnkRegister
+  if hasFields(reg, props):
+    typeName.appendTypeName("Fields")
+  else:
+    intname props.size
+
+
+func createBitfieldTypes(dev: SvdDevice, periph: SvdPeripheral,
+                         types: Table[SvdId, string]):
+                         OrderedTable[string, CodeGenDistinctDef] =
+  for reg in periph.walkRegistersOnly:
+    let
+      props = dev.resolveRegProperties(reg)
+      regTypeName = types[reg.id]
+
+    if not hasFields(reg, props):
+      continue
+
+    for field in reg.fields:
+      let fieldTypeName = getRegValueType(reg, regTypeName, props)
+      result[fieldTypeName] = CodeGenDistinctDef(
+        name: fieldTypeName,
+        public: true,
+        basetype: intname props.size
+      )
+
+
+func getFieldType(field: SvdField, regTypeName, implType: string): string =
+  # Type of a field is either a bool (if 1-bit length), an Enum type if
+  # one is defined, otherwise a plain uint.
+  if field.enumValues.isSome:
+    getEnumTypeName(field.enumValues.get, field.name, regTypeName)
+  elif field.bitsize == 1:
+    "bool"
+  else:
+    implType
+
+
+func createBitfieldAccessors(dev: SvdDevice, periph: SvdPeripheral,
+                             types: Table[SvdId, string],
+                             codegenSymbols: HashSet[string]):
+                             OrderedTable[string, CodeGenProcDef] =
+  for reg in periph.walkRegistersOnly:
+    let
+      props = dev.resolveRegProperties(reg)
+      regTypeName = types[reg.id]
+      implType = intname props.size
+      regValueType = getRegValueType(reg, regTypeName, props)
+
+    if not hasFields(reg, props):
+      continue
+
+    for field in reg.fields:
+      let
+        access = field.access.get(props.access)
+        lsb = field.lsb
+        msb = field.msb
+
+      let valType = getFieldType(field, regTypeName, implType)
+
+      let getterName = block:
+        var n = field.name.sanitizeIdent
+        # Proc name may conflict with, eg, const instances.
+        # In this case, attempt to generate a unique proc name by appending
+        # "Field" suffix.
+        if n in codegenSymbols:
+          n = n & "Field"
+          assert n notin codegenSymbols
+        n
+
+      if access.isReadable:
+        var getter = CodeGenProcDef(
+          keyword: "func",
+          name: getterName,
+          public: true,
+          args: @[("r", regValueType)],
+          retType: valType,
+          pragma: @["inline"],
+          body: fmt"r.{implType}.bitsliced({lsb} .. {msb})"
+        )
+        if valType != implType:
+          getter.body &= ("." & valType)
+        result[fmt"{getter.name}[{regValueType}]"] = getter
+
+      if access.isWritable:
+        var setter = CodeGenProcDef(
+          keyword: "proc",
+          name: fmt"`{getterName}=`",
+          public: true,
+          args: @[("r", "var " & regValueType), ("val", valType)],
+          pragma: @["inline"],
+          body: fmt"r.{implType}.bitsliced({lsb} .. {msb})"
+        )
+        let valconv = if valType != implType: "." & implType else: ""
+        setter.body = fmt"""
+        var tmp = r.{implType}
+        tmp.clearMask({lsb} .. {msb})
+        tmp.setMask((val{valconv} shl {lsb}).masked({lsb} .. {msb}))
+        r = tmp.{regValueType}
+        """.dedent().strip(leading=false)
+        result[fmt"{setter.name}[{regValueType}, {valType}]"] = setter
+
+
+func getFieldDefaultVal(field: SvdField, regTypeName: string, regVal: int64,
+                        codegenSymbols: HashSet[string]): string =
+  let
+    fslice = field.lsb.int .. field.msb.int
+    numVal = regVal.bitsliced(fslice)
+  result =
+    if field.enumValues.isSome:
+      let enumObj = createEnum(field, regTypeName, codegenSymbols)
+      var val = enumObj.fields[0].key
+      for (k, v) in enumObj.fields:
+        if v == numVal:
+          val = k
+      val
+    elif field.bitsize == 1:
+      $(numVal > 0)
+    else:
+      $numVal
+
+
+func createFieldsWriter(reg: SvdRegisterTreeNode, props: ResolvedRegProperties,
+                        regTypeName, valType: string,
+                        codegenSymbols: HashSet[string]): CodeGenProcDef =
+  ## Create a `write` method that takes fields values as arguments for
+  ## registers with fields.
+  assert reg.kind == rnkRegister
+
+  let implType = intname props.size
+
+  result = CodeGenProcDef(
+    keyword: "proc",
+    name: "write",
+    public: true,
+  )
+  result.args.add ("reg", regTypeName)
+  result.body.add fmt"var x: {implType}" & "\n"
+
+  for field in reg.fields:
+    # TODO: prevent duplication of arguments?
+    let
+      argName = field.name.sanitizeIdent
+      argValType = getFieldType(field, regTypeName, implType)
+      valconv = if argValType != implType: "." & implType else: ""
+      defValStr = getFieldDefaultVal(field, regTypeName, props.resetValue, codegenSymbols)
+
+    result.args.add CodeGenProcDefArg(
+      name: argName,
+      typ: argValType,
+      defaultVal: some defValStr
+    )
+    result.body.add fmt"x.setMask(({argName}{valconv} shl {field.lsb}).masked({field.lsb} .. {field.msb}))" & "\n"
+
+  result.body.add fmt"reg.write x.{valType}"
+
+
+func createAccessors(dev: SvdDevice, periph: SvdPeripheral,
+                     types: Table[SvdId, string], codegenSymbols: HashSet[string]):
+                     OrderedTable[string, CodeGenProcDef] =
+  for reg in periph.walkRegistersOnly:
+    let
+      props = dev.resolveRegProperties(reg)
+      regTypeName = types[reg.id]
+      valType = getRegValueType(reg, regTypeName, props)
+
+    if props.access.isReadable:
+      var reader = CodeGenProcDef(
+        keyword: "proc",
+        name: "read",
+        public: true,
+        args: @[("reg", regTypeName)],
+        retType: valType,
+        pragma: @["inline"],
+      )
+      reader.body = fmt"volatileLoad(cast[ptr {valType}](reg.loc))"
+      result[fmt"read[{regTypeName}]"] = reader
+
+    if props.access.isWritable:
+      var writer = CodeGenProcDef(
+        keyword: "proc",
+        name: "write",
+        public: true,
+        args: @[
+          ("reg", regTypeName),
+          ("val", valType),
+        ],
+        pragma: @["inline"],
+      )
+      writer.body = fmt"volatileStore(cast[ptr {valType}](reg.loc), val)"
+      result[fmt"write[{regTypeName}]"] = writer
+
+      if reg.hasFields(props):
+        result[fmt"write_fields[{regTypeName}]"] =
+          createFieldsWriter(reg, props, regTypeName, valType, codegenSymbols)
+
+    if props.access.isReadable and props.access.isWritable:
+      var modTpl = CodeGenProcDef(
+        keyword: "template",
+        name: "modifyIt",
+        public: true,
+        args: @[
+          ("reg", regTypeName),
+          ("op", "untyped"),
+        ],
+        retType: "untyped",
+      )
+      modTpl.body = """
+      block:
+        var it {.inject.} = reg.read()
+        op
+        reg.write(it)
+      """.dedent().strip(leading=false)
+      result[fmt"modifyIt[{regTypeName}]"] = modTpl
+
+
+proc renderRegister(reg: SvdRegisterTreeNode, typeName: string, numIndent: Natural,
+                    baseAddress: Natural, tg: File) =
+  assert reg.kind == rnkRegister
+
+  if reg.isDimArray:
     tg.write("[\n")
-    for arrIndex in 0 ..< (r.dimGroup.dim.get):
+    for arrIndex in 0 ..< (reg.dimGroup.dim.get):
       let address = baseAddress +
-                    r.addressOffset +
-                    arrIndex * (r.dimGroup.dimIncrement.get)
+                    reg.addressOffset +
+                    arrIndex * (reg.dimGroup.dimIncrement.get)
       let locIndent = repeat(Indent, numIndent + 1)
-      tg.write(fmt"{locIndent}{r.nimTypeName}(loc: {address:#x})," & "\n")
+      tg.write(fmt"{locIndent}{typeName}(loc: {address:#x})," & "\n")
     tg.write(repeat(Indent, numIndent) & "]\n")
   else:
-    let address = baseAddress + r.addressOffset
-    tg.write(fmt"{r.nimTypeName}(loc: {address:#x})," & "\n")
+    let address = baseAddress + reg.addressOffset
+    tg.write(fmt"{typeName}(loc: {address:#x})," & "\n")
 
-proc renderCluster(
-  cluster: SvdCluster,
-  numIndent: Natural,
-  baseAddress: Natural,
-  tg: File)
 
-proc renderFields[T: SvdCluster | SvdPeripheral](
-  p: T,
-  baseAddress: Natural,
-  numIndent: Natural,
-  tg: File) =
+proc renderCluster(cluster: SvdRegisterTreeNode, numIndent: Natural,
+                   baseAddress: Natural, dev: SvdDevice,
+                   typeMap: Table[SvdId, string], tg: File)
 
-  let fields = block:
-    var fields: seq[SvdEntity]
-    for c in p.clusters: fields.add c.toEntity(p.name)
-    for r in p.registers: fields.add r.toEntity(p.name)
-    fields.sort(cmpAddrOffset)
-    fields
+
+proc renderObjFields(e: SvdRegisterParent, baseAddress: Natural, numIndent: Natural,
+                     dev: SvdDevice, typeMap: Table[SvdId, string], tg: File) =
+
+  when typeof(e) is SvdRegisterTreeNode:
+    assert e.kind == rnkCluster
+
+  let children = block:
+    var c = toSeq e.iterRegisters
+    c.sort cmpAddrOffset
+    c
 
   let locIndent = repeat(Indent, numIndent)
 
-  for f in fields:
-    let fName = f.getName.stripPlaceHolder.sanitizeIdent
+  for c in children:
+    let
+      fName = dev.fieldName(c)
+      typeName = typeMap[c.id]
     tg.write(fmt"{locIndent}{fName}: ")
 
-    case f.kind:
-    of seRegister:
-      renderRegister(f.register, numIndent, baseAddress, tg)
-    of seCluster:
-      renderCluster(f.cluster, numIndent, baseAddress, tg)
-    of sePeripheral:
-      doAssert false
+    case c.kind:
+    of rnkRegister:
+      renderRegister(c, typeName, numIndent, baseAddress, tg)
+    of rnkCluster:
+      renderCluster(c, numIndent, baseAddress, dev, typeMap, tg)
 
-proc renderCluster(
-  cluster: SvdCluster,
-  numIndent: Natural,
-  baseAddress: Natural,
-  tg: File) =
+
+proc renderCluster(cluster: SvdRegisterTreeNode, numIndent: Natural,
+                   baseAddress: Natural, dev: SvdDevice,
+                   typeMap: Table[SvdId, string], tg: File) =
+
+  assert cluster.kind == rnkCluster
+  let typeName = typeMap[cluster.id]
 
   if cluster.isDimArray:
     # TODO: dim array of clusters has not been tested. Find or create SVD snippet
@@ -405,51 +600,78 @@ proc renderCluster(
       let address = baseAddress +
                     cluster.addressOffset +
                     arrIndex * (cluster.dimGroup.dimIncrement.get)
-      tg.write(fmt"{locIndent}{cluster.nimTypeName}(" & "\n")
-      renderFields(cluster, address, numIndent+2, tg)
+      tg.write(fmt"{locIndent}{typeName}(" & "\n")
+      renderObjFields(cluster, address, numIndent+2, dev, typeMap, tg)
       tg.write(locIndent & "),\n")
     tg.write(repeat(Indent, numIndent) & "]\n")
   else:
     let
       address = baseAddress + cluster.addressOffset
-    tg.write(fmt"{cluster.nimTypeName}(" & "\n")
-    renderFields(cluster, address, numIndent+1, tg)
+    tg.write(fmt"{typeName}(" & "\n")
+    renderObjFields(cluster, address, numIndent+1, dev, typeMap, tg)
     tg.write(repeat(Indent, numIndent) & "),\n")
 
-proc renderPeripheral(p: SvdPeripheral, tg: File) =
-  let insName = p.name.stripPlaceHolder.sanitizeIdent
 
-  if p.isDimArray:
+proc renderPeripheral(periph: SvdPeripheral, typeMap: Table[SvdId, string],
+                      dev:  SvdDevice, tg: File): string =
+  let
+    insName = periph.name.stripPlaceHolder.sanitizeIdent
+    pTypeName = typeMap[periph.id]
+
+  if periph.isDimArray:
     # TODO: dim array of peripherals has not been tested. Find or create SVD snippet
     # using this codepath to test.
     tg.writeLine(fmt"const {insName}* = [")
-    for arrIndex in 0 ..< (p.dimGroup.dim.get):
-      let address = p.baseAddress + arrIndex * p.dimGroup.dimIncrement.get
-      tg.write(fmt"{Indent}{p.nimTypeName}(" & "\n")
-      renderFields(p, address, 2, tg)
+    for arrIndex in 0 ..< (periph.dimGroup.dim.get):
+      let address = periph.baseAddress + arrIndex * periph.dimGroup.dimIncrement.get
+      tg.write(fmt"{Indent}{pTypeName}(" & "\n")
+      renderObjFields(periph, address, 2, dev, typeMap, tg)
       tg.write(Indent & "),\n")
     tg.write(Indent & "]\n\n")
   else:
-    tg.writeLine(fmt"const {insName}* = {p.nimTypeName}(")
-    renderFields(p, p.baseAddress, 1, tg)
+    tg.writeLine(fmt"const {insName}* = {pTypeName}(")
+    renderObjFields(periph, periph.baseAddress, 1, dev, typeMap, tg)
     tg.write(")\n\n")
+
+  result = insname
+
 
 proc renderEnum(en: CodeGenEnumDef, tg: File) =
   let star = if en.public: "*" else: ""
-  tg.writeLine(fmt"type {en.name}{star} {{.pure.}} = enum")
+  tg.writeLine(fmt"type {en.name}{star} = enum")
   for (k, v) in en.fields:
     tg.writeLine(fmt"{Indent}{k} = {v:#x},")
   tg.write "\n"
 
+
+proc renderDistinctTypes(typedefs: seq[CodeGenDistinctDef], tg: File) =
+  if typedefs.len == 0: return
+  tg.writeLine "type"
+  for def in typedefs:
+    let star = if def.public: "*" else: ""
+    tg.writeLine fmt"{Indent}{def.name}{star} = distinct {def.basetype}"
+  tg.write("\n")
+
+
 proc renderProcDef(prd: CodeGenProcDef, tg: File) =
   let
-    argString = prd.args.mapIt(it.name & ": " & it.typ).join(", ")
-    retString = if prd.retType.isSome: ": " & prd.retType.get else: ""
+    retString = if prd.retType.len > 0: ": " & prd.retType else: ""
     star = if prd.public: "*" else: ""
-  tg.writeLine(fmt"{prd.keyword} {prd.name}{star}({argString}){retString} =")
+    pragmaStr = if prd.pragma.len > 0: " {." & prd.pragma.join(", ") & ".}" else: ""
+
+  var argStringSeq: seq[string]
+  for argObj in prd.args:
+    let defValStr =
+      if argObj.defaultVal.isNone: ""
+      else: " = " & argObj.defaultVal.get
+    argStringSeq.add fmt"{argObj.name}: {argObj.typ}{defValStr}"
+  let argString = argStringSeq.join ", "
+
+  tg.writeLine(fmt"{prd.keyword} {prd.name}{star}({argString}){retString}{pragmaStr} =")
   for line in prd.body.splitLines:
     tg.writeLine Indent & line
   tg.write "\n"
+
 
 proc renderHeader(text: string, outf: File) =
   outf.write("\n")
@@ -460,124 +682,168 @@ proc renderHeader(text: string, outf: File) =
   outf.write(repeat("#",80))
   outf.write("\n")
 
-proc renderCortexMExceptionNumbers(cpu: SvdCpu, outf: File) =
-  type exception = object
-    name: string
-    value: int
-    description: string
-
-  let exceptions: seq[exception] = @[
-    exception(name: "NonMaskableInt", value: -14, description: "Exception 2: Non Maskable Interrupt"),
-    exception(name: "HardFault", value: -13, description: "Exception 3: Hard fault Interrupt"),
-    exception(name: "MemoryManagement", value: -12, description: "Exception 4: Memory Management Interrupt [Not on Cortex M0 variants]"),
-    exception(name: "BusFault", value: -11, description: "Exception 5: Bus Fault Interrupt [Not on Cortex M0 variants]"),
-    exception(name: "UsageFault", value: -10, description: "Exception 6: Usage Fault Interrupt [Not on Cortex M0 variants]"),
-    exception(name: "SecureFault", value: -9, description: "Exception 7: Secure Fault Interrupt [Only on Armv8-M]"),
-    exception(name: "SVCall", value: -5, description: "Exception 11: SV Call Interrupt"),
-    exception(name: "DebugMonitor", value: -4, description: "Exception 12: Debug Monitor Interrupt [Not on Cortex M0 variants]"),
-    exception(name: "PendSV", value: -2, description: "Exception 14: Pend SV Interrupt [Not on Cortex M0 variants]"),
-    exception(name: "SysTick", value: -1, description: "Exception 15: System Tick Interrupt"),
-    exception(name: "WWDG", value: 0, description: "Window WatchDog Interrupt"),
-    exception(name: "PVD", value: 1, description: "PVD through EXTI Line detection Interrupt")
-  ]
-  # Render
+proc renderInterrupts(dev: SvdDevice, outf: File) =
   renderHeader("# Interrupt Number Definition", outf)
-  outf.write("type IRQn* = enum\n")
-  var hdr = "# #### Cortex-M Processor Exception Numbers "
-  outf.write(hdr & repeat("#", 80-len(hdr)) & "\n")
-  for excep in exceptions:
-    if cpu.name.toUpper() in ["CM0","CM0+"]:
-      if excep.value in [-12,-11,-10,-9,-4]:
-        continue
-    else:
-      if excep.value in [-9]:
-        continue
-    if excep.value == 0:
-      hdr = "# #### Device specific Interrupt numbers "
-      outf.write(hdr & repeat("#", 80-len(hdr)) & "\n")
-    var itername = "  $#_IRQn = $#," % [excep.name, excep.value.intToStr()]
-    outf.write(itername)
-    outf.write(repeat(" ", 40-len(itername)))
-    outf.write("# $#\n" % excep.description)
+  outf.writeLine("type IRQn* = enum")
+  let
+    cmExcHdr =  "# #### Cortex-M Processor Exception Numbers "
+    devIrqHdr = "# #### Device Peripheral Interrupts "
+  template irqHeader(s: string) {.dirty.} =
+    outf.writeLine(s & repeat("#", 80 - len(s)))
 
-func getInterrupts(dev: SvdDevice): seq[SvdInterrupt] =
-  # Get interrupts from all periphs
-  dev.peripherals
+  # CPU core interupts
+  irqHeader cmExcHdr
+  let coreInterrupts = CpuIrqTable[dev.cpu.name.replace("+", "PLUS")]
+  for cIrq in coreInterrupts:
+    let desc = CpuIrqArray[cIrq].description
+    outf.writeLine fmt"  {$cIrq:20} = {cIrq.int:4} # {desc}"
+
+  # Peripheral interrupts
+  irqHeader devIrqHdr
+  let interrupts = toSeq(dev.peripherals.values)
     .mapIt(it.interrupts)
     .foldl(a & b)
     .sortedByIt(it.value)
+  for iter in interrupts:
+    outf.writeLine fmt"  irq{iter.name:17} = {iter.value:4} # {iter.description}"
 
-proc renderInterrupts(dev: SvdDevice, outf: File) =
-  var maxIrq = 0
-  # Find all interrupts
-  for iter in dev.getInterrupts:
-    if maxIrq < iter.value:
-      maxIrq = iter.value
-    if iter.value <= 1:
-      continue
-    var itername = format("  $#_IRQn = $#, " % [iter.name.toUpper, iter.value.intToStr()])
-    outf.write(itername)
-    outf.write(repeat(" ", 60-len(itername)))
-    if iter.description.isSome:
-      outf.write("# $#" % iter.description.get)
-    outf.write("\n")
+func convertCpuRevision(text: string): uint =
+  # Based on:
+  # https://github.com/Open-CMSIS-Pack/devtools/blob/259aa1f6755bd96497acdf403a008a4ba4cb2d66/tools/svdconv/SVDModel/src/SvdUtils.cpp#L246
+  let pat = re"r(\d+)p(\d+)"
+  var m: RegexMatch
+  doAssert text.toLowerAscii.match(pat, m)
+  let
+    major = m.group(0, text)[0].parseUInt
+    minor = m.group(1, text)[0].parseUInt
+  result = (major shl 8) or (minor)
 
+func quoted(s: string): string =
+  '"' & s & '"'
 
-proc renderDevice*(d: SvdDevice, outf: File) =
-  outf.write("# Peripheral access API for $# microcontrollers (generated using svd2nim)\n\n" % d.metadata.name.toUpper())
-  outf.write("import std/volatile\n\n")
+proc renderDeviceConsts(dev: SvdDevice, codegenSymbols: var HashSet[string], outf: File) =
+  if not dev.cpu.isNil:
+    outf.write("# Some information about this device.\n")
+
+    let
+      cpuNameSan = dev.cpu.name.replace(re"(M\d+)\+", "$1PLUS")
+      cpuConsts = {
+        "DEVICE": quoted(dev.metadata.name),
+        fmt"{cpuNameSan}_REV": fmt"{convertCpuRevision(dev.cpu.revision):#06x}",
+        "MPU_PRESENT": $dev.cpu.mpuPresent,
+        "FPU_PRESENT": $dev.cpu.fpuPresent,
+        "VTOR_PRESENT": $dev.cpu.vtorPresent,
+        "NVIC_PRIO_BITS": $dev.cpu.nvicPrioBits,
+        "Vendor_SysTickConfig": $dev.cpu.vendorSystickConfig,
+      }
+
+    for (k, v) in cpuConsts:
+      outf.writeLine fmt"const {k}* = {v}"
+      codeGenSymbols.incl k
+
+proc renderCoreInclude(dev: SvdDevice, outf: File, dirPath: string) =
+  const coreBindings = {
+    "core_cm0plus": staticRead("core/core_cm0plus.nim")
+  }.toTable
+
+  let coreFile = case dev.cpu.name:
+    of "CM0+":
+      "core_cm0plus"
+    of "CM0P":
+      "core_cm0plus"
+    of "CM0PLUS":
+      "core_cm0plus"
+    else:
+      ""
+
+  if coreFile.len == 0:
+    stderr.writeLine fmt"INFO: Core header bindings not yet implemented for CPU ""{dev.cpu.name}""."
+  else:
+    outf.write fmt"""
+
+    # Bindings for core header. The corresponding CMSIS header file must be found in
+    # the C compiler include path. See comment at the top of the following .nim file
+    # for details.
+    # The following line may be commented out if these bindings are not required.
+    include {coreFile}
+    """.dedent
+
+    writeFile(joinPath(dirPath, coreFile & ".nim"), coreBindings[coreFile])
+
+proc renderDevice*(dev: SvdDevice, outf: File, dirpath: string) =
+  outf.write("# Peripheral access API for $# microcontrollers (generated using svd2nim)\n\n" % dev.metadata.name.toUpper())
+  outf.writeLine("import std/volatile")
+  outf.writeLine("import std/bitops")
+  outf.write("\n")
 
   # Supress name hints
   outf.write("{.hint[name]: off.}\n\n")
 
-  if not d.cpu.isNil():
-    outf.write("# Some information about this device.\n")
-    outf.write("const DEVICE* = \"$#\"\n" % d.metadata.name)
-  # CPU
-    let cpuNameSan = d.cpu.name.replace(re"(M\d+)\+", "$1PLUS")
-    outf.write("const $#_REV* = 0x0001\n" % cpuNameSan)
-    outf.write("const MPU_PRESENT* = $#\n" % $d.cpu.mpuPresent.int)
-    outf.write("const FPU_PRESENT* = $#\n" % $d.cpu.fpuPresent.int)
-    outf.write("const VTOR_PRESENT* = $#\n" % $d.cpu.vtorPresent.int)
-    outf.write("const NVIC_PRIO_BITS* = $#\n" % $d.cpu.nvicPrioBits.int)
-    outf.write("const Vendor_SysTickConfig* = $#\n" % $d.cpu.vendorSystickConfig.int)
+  # Enable overloadable enums for nim v1.x
+  outf.write:
+    """
+    when NimMajor < 2:
+      {.experimental: "overloadableEnums".}
+    """.dedent.strip
+  outf.write "\n\n"
 
-  renderCortexMExceptionNumbers(d.cpu, outf)
-  renderInterrupts(d, outf)
+  var codeGenSymbols: HashSet[string]
+
+  renderDeviceConsts(dev, codeGenSymbols, outf)
+  renderInterrupts(dev, outf)
+  if cgOpts.includeCore:
+    renderCoreInclude(dev, outf, dirPath)
 
   renderHeader("# Type definitions for peripheral registers", outf)
-  for periph in d.peripherals:
-    setAllTypeNames periph
-  let typeDefs = d.createTypeDefs()
-  for t in toSeq(typeDefs.values):
+
+  let
+    typeMap = dev.buildTypeMap
+    typeDefs = dev.createTypeDefs(typeMap)
+
+
+  for t in typeDefs:
+    codegenSymbols.incl t.name
     t.renderType(outf)
     outf.writeLine("")
 
   renderHeader("# Peripheral object instances", outf)
-  for periph in d.peripherals:
-    renderPeripheral(periph, outf)
+  for periph in dev.peripherals.values:
+    let constName = renderPeripheral(periph, typeMap, dev, outf)
+    codegenSymbols.incl constName
 
   renderHeader("# Accessors for peripheral registers", outf)
-  # Create hash sets so we don't duplicate typedefs or accessor templates
-  # They are already deduplicated within a periph by the create* procs, but
-  # duplicates can still be created from another periph, eg when perriphs
-  # are derivedFrom or dimlists.
-  var
-    fieldStructTypes: HashSet[string]
-    fieldEnumTypes: HashSet[string]
-    accessors: HashSet[string]
 
-  for periph in d.peripherals:
-    for (k, objDef) in periph.createBitFieldStructs.pairs:
-      if k notin fieldStructTypes:
-        fieldStructTypes.incl k
-        renderType(objDef, outf)
-        outf.write("\n")
-    for (k, en) in periph.createFieldEnums.pairs:
-      if k notin fieldEnumTypes:
-        fieldEnumTypes.incl k
-        renderEnum(en, outf)
-    for (k, acc) in periph.createAccessors.pairs:
-      if k notin accessors:
-        accessors.incl k
-        renderProcDef(acc, outf)
+  # Use sets to deduplicate generated code types and procs
+  var
+    fieldDistinctDefs: HashSet[string]
+    enumDefs: HashSet[string]
+    accDefs: HashSet[string]
+
+  for p in dev.peripherals.values:
+    var typedefs: seq[CodeGenDistinctDef]
+    for (name, def) in createBitfieldTypes(dev, p, typeMap).pairs:
+      if name in fieldDistinctDefs:
+        continue
+      fieldDistinctDefs.incl name
+      codegenSymbols.incl name
+      typedefs.add def
+    renderDistinctTypes(typedefs, outf)
+
+    for (name, en) in createFieldEnums(p, typeMap, codeGenSymbols).pairs:
+      if name in enumDefs:
+        continue
+      enumDefs.incl name
+      codegenSymbols.incl en.name
+      renderEnum(en, outf)
+
+    for (name, acc) in createAccessors(dev, p, typeMap, codeGenSymbols).pairs:
+      if name in accDefs:
+        continue
+      accDefs.incl name
+      renderProcDef(acc, outf)
+
+    for (name, bfacc) in createBitfieldAccessors(dev, p, typeMap, codegenSymbols).pairs:
+      if name in accDefs:
+        continue
+      accDefs.incl name
+      renderProcDef(bfacc, outf)

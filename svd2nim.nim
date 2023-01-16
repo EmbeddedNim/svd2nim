@@ -5,20 +5,21 @@ import std/tables
 import std/strutils
 import std/strformat
 import std/options
+import std/os
 
 import docopt
 
 import ./basetypes
 import ./svdparser
+import ./transformations
 import ./codegen
-import ./expansions
 
 proc warnNotImplemented(dev: SvdDevice) =
-  for p in dev.peripherals:
+  for p in dev.peripherals.values:
     if p.dimGroup.dim.isSome and p.name.contains("[%s]"):
       stderr.writeLine(fmt"WARNING: Peripheral {p.name} is a dim array, not implemented.")
 
-    for reg in p.allRegisters:
+    for reg in p.walkRegistersOnly:
       for field in reg.fields:
         if field.derivedFrom.isSome:
           stderr.writeLine(fmt"WARNING: Register field {reg.name}.{field.name} of peripheral {p.name} is derived, not implemented.")
@@ -33,13 +34,8 @@ proc processSvd*(path: string): SvdDevice =
   # Parse SVD file and apply some post-processing
   result = readSVD(path)
   warnNotImplemented result
-
-  # Expand derivedFrom entities in peripherals and their children
-  expandDerives result.peripherals
-
-  # Expand dim lists
-  # Note: dim arrays are expanded at codegen time
-  result.peripherals = expandAllDimLists(result.peripherals)
+  result.deriveAll
+  result.expandAll
 
 ###############################################################################
 # Main
@@ -71,8 +67,9 @@ proc main() =
     -h --help           Show this screen.
     -v --version        Show version.
     -o FILE             Specify output file. (default: ./<device_name>.nim)
-    --ignorePrepend     Ignore peripheral <prependToName>
-    --ignoreAppend      Ignore peripheral <appendToName>
+    --include-core      Include bindings for core_*.h file for CPU core
+    --ignore-prepend    Ignore peripheral <prependToName>
+    --ignore-append     Ignore peripheral <appendToName>
   """
   let args = docopt(help, version=getVersion())
   #for (k, v) in args.pairs: echo fmt"{k}: {v}" # Dump args for debugging
@@ -84,12 +81,13 @@ proc main() =
       outf = open(outFileName, fmWrite)
 
     let cgopts = CodeGenOptions(
-      ignoreAppend: args["--ignoreAppend"],
-      ignorePrepend: args["--ignorePrepend"]
+      includeCore: args["--include-core"],
+      ignoreAppend: args["--ignore-append"],
+      ignorePrepend: args["--ignore-prepend"],
     )
 
     setOptions cgopts
-    renderDevice(dev, outf)
+    renderDevice(dev, outf, outFileName.parentDir)
   else:
     echo "Try: svd2nim -h"
 

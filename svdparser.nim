@@ -3,26 +3,36 @@ import std/xmlparser
 import std/xmltree
 import std/options
 import std/strtabs
+import std/tables
+import std/strformat
 
 import regex
 
 import ./basetypes
-import ./strformat
 import ./utils
 
 
-###############################################################################
-# Private Procedures
-###############################################################################
-
-func parseHexOrDecInt(s: string) : int =
+func parseHexOrDecInt(s: string) : int64 =
   # Parse string to integer. According to CMSIS spec, if the string
   # starts with 0X or 0x it is to be interpreted as hexadecimal.
   # TODO: Implementing parsing binary if string starts with #
   if s.toLower().startsWith("0x"):
-    result = fromHex[int](s)
+    result = fromHex[int64](s)
+  elif s[0] == '#':
+    raise newException(NotImplementedError, "binary value parsing not yet implemented")
   else:
-    result = parseInt(s)
+    result = parseBiggestInt s
+
+func getChildTextDefault(pNode: XmlNode, tag: string, default=""): string =
+  # Get text of child tag, or none if tag not found.
+  let c = pNode.child(tag)
+  result =
+    if c.isNil:
+      default
+    elif c.kind notin {xnText, xnCData, xnElement}:
+      default
+    else:
+      c.innerText
 
 func getChildTextOpt(pNode: XmlNode, tag: string): Option[string] =
   # Get text of child tag, or none if tag not found.
@@ -34,13 +44,24 @@ func getChildTextOpt(pNode: XmlNode, tag: string): Option[string] =
   else:
     return some(c.innerText)
 
+
+func getChildIntOpt(pNode: XmlNode, tag: string): Option[int64] =
+    # Get text of child tag as int, or none if tag not found.
+    let text = pNode.getChildTextOpt(tag)
+    if text.isNone:
+      return none int64
+    else:
+      return some text.get().parseHexOrDecInt
+
+
 func getChildNaturalOpt(pNode: XmlNode, tag: string): Option[Natural] =
-    # Get text of child tag cas as Natural, or none if tag not found.
+    # Get text of child tag as Natural, or none if tag not found.
     let text = pNode.getChildTextOpt(tag)
     if text.isNone:
       return none(Natural)
     else:
       return some(text.get().parseHexOrDecInt.Natural)
+
 
 func getChildTextExc(pNode: XmlNode, tag: string): string =
   let c = pNode.child(tag)
@@ -49,11 +70,13 @@ func getChildTextExc(pNode: XmlNode, tag: string): string =
     raise newException(SVDError, fmt"Missing tag '{tag}' in element {fline}")
   result = c.innerText
 
+
 func getChildOrError(pNode: XmlNode, tag: string): XmlNode =
   result = pNode.child(tag)
   if result.isNil:
     let fline = splitLines($pNode)[0]
     raise newException(SVDError, fmt"Missing tag '{tag}' in element {fline}" )
+
 
 func getChildBoolOrDefault(n: XmlNode, tag: string, default: bool): bool =
   let cld = n.child(tag)
@@ -61,6 +84,7 @@ func getChildBoolOrDefault(n: XmlNode, tag: string, default: bool): bool =
     return default
   else:
     return cld.innerText.parseBool
+
 
 func attrOpt(n: XmlNode, name: string): Option[string] =
   # Return some(attr_value) if attr exists, otherwise none
@@ -71,6 +95,7 @@ func attrOpt(n: XmlNode, name: string): Option[string] =
   else:
     none(string)
 
+
 iterator findAllDirect(n: XmlNode, tag: string): XmlNode =
   # Iterate over all direct children with given tag
   for cld in n.items:
@@ -79,8 +104,10 @@ iterator findAllDirect(n: XmlNode, tag: string): XmlNode =
     if cld.tag == tag:
       yield cld
 
+
 func parseFieldEnum(eNode: XmlNode): SvdFieldEnum =
   assert eNode.tag == "enumeratedValues"
+  new result
   result.name = eNode.getChildTextOpt("name")
   result.derivedFrom = eNode.attrOpt("derivedFrom")
   result.headerEnumName = eNode.getChildTextOpt("headerEnumName")
@@ -97,7 +124,7 @@ func parseFieldEnum(eNode: XmlNode): SvdFieldEnum =
     let
       name = enumValueNode.getChildTextExc("name")
       val = valueNode.innerText.parseHexOrDecInt
-    result.values.add (name: name, val: val)
+    result.values.add (name: name, val: val.int)
 
 func parseDimElementGroup(n: XmlNode): SvdDimElementGroup =
   result.dim = n.getChildNaturalOpt("dim")
@@ -109,11 +136,27 @@ func parseDimElementGroup(n: XmlNode): SvdDimElementGroup =
   if result.dim.isSome and result.dimIncrement.isNone:
     raise newException(SVDError, "Node has dim but no dimIncrement")
 
+
+func parseAccess(node: XmlNode): Option[SvdRegisterAccess] =
+  let access = node.getChildTextOpt("access")
+  if access.isSome:
+    result = some(case access.get:
+      of "read-write": raReadWrite
+      of "read-only": raReadOnly
+      of "write-only": raWriteOnly
+      of "writeOnce": raWriteOnce
+      of "read-writeOnce": raReadWriteOnce
+      else: raise newException(SVDError, "Unknown access value: " & access.get)
+    )
+
+
 func parseField(fNode: XmlNode): SvdField =
   assert fNode.tag == "field"
+  new result
   result.name = fNode.getChildTextExc("name")
   result.derivedFrom = fNode.attrOpt("derivedFrom")
   result.description = fNode.getChildTextOpt("description")
+  result.access = fNode.parseAccess
 
   # Get list of child tag names
   var childTags = newSeq[string]()
@@ -121,20 +164,18 @@ func parseField(fNode: XmlNode): SvdField =
     if elem.kind == xnElement: childTags.add elem.tag
 
   # SVD spec allows three ways to specify the location and size of bitfields
-  # Here we check for th three possibilities and parse them to the SvdBitrange
-  # type, which is close to the bitRangePattern spec.
+  # Here we check for th three possibilities and parse them to (lsb, msb) pairs.
   if childTags.contains("bitOffset") and childTags.contains("bitWidth"):
     # bitRangeOffsetWidthStyle
     let
       bitOffset: Natural = fNode.child("bitOffset").innerText.parseHexOrDecInt
       bitWidth: Natural = fNode.child("bitWidth").innerText.parseHexOrDecInt
-    result.bitRange = (lsb: bitOffset, msb: (bitOffset + bitWidth - 1).Natural)
+    result.lsb = bitOffset
+    result.msb = (bitOffset + bitWidth - 1).Natural
   elif childTags.contains("lsb") and childTags.contains("msb"):
     # bitRangeOffsetWidthStyle
-    let
-      lsb: Natural = fNode.child("lsb").innerText.parseHexOrDecInt
-      msb: Natural = fNode.child("msb").innerText.parseHexOrDecInt
-    result.bitRange = (lsb: lsb, msb: msb)
+    result.lsb = fNode.child("lsb").innerText.parseHexOrDecInt
+    result.msb = fNode.child("msb").innerText.parseHexOrDecInt
   elif childTags.contains("bitRange"):
     # bitRangePattern
     let
@@ -142,10 +183,8 @@ func parseField(fNode: XmlNode): SvdField =
       text = fNode.child("bitRange").innerText
     var m: RegexMatch
     doAssert text.match(pat, m)
-    let
-      msb: Natural = m.group(0, text)[0].parseHexOrDecInt
-      lsb: Natural = m.group(1, text)[0].parseHexOrDecInt
-    result.bitRange = (lsb: lsb, msb: msb)
+    result.msb = m.group(0, text)[0].parseHexOrDecInt
+    result.lsb = m.group(1, text)[0].parseHexOrDecInt
   else:
     raise newException(SVDError, fmt"Invalid bit range specification in field '{result.name}'")
 
@@ -157,102 +196,86 @@ func parseField(fNode: XmlNode): SvdField =
 
   result.dimGroup = fNode.parseDimElementGroup()
 
-func updateProperties(parent: SvdRegisterProperties, node: XmlNode): SvdRegisterProperties =
-  # Create a new RegisterProperties instance by update parent fields with child
-  # fields if they are some.
-  result = parent
 
-  let
-    size = node.getChildNaturalOpt("size")
-    access = node.getChildTextOpt("access")
-
-  if size.isSome: result.size = size.get
-
-  if access.isSome:
-    result.access = case access.get:
-      of "read-write": raReadWrite
-      of "read-only": raReadOnly
-      of "write-only": raWriteOnly
-      of "writeOnce": raWriteOnce
-      of "read-writeOnce": raReadWriteOnce
-      else: raise newException(SVDError, "Unknown access value: " & access.get)
-
-func parseRegister(rNode: XmlNode, parentRp: SvdRegisterProperties): SvdRegister =
-  assert rNode.tag == "register"
-  result = new(SvdRegister)
-
-  result.name = rNode.getChildTextExc("name")
-  result.baseName = result.name.stripPlaceHolder
-  result.derivedFrom = rNode.attrOpt("derivedFrom")
-  result.addressOffset = rNode.getChildTextExc("addressOffset").parseHexOrDecInt.Natural
-  result.description = rNode.getChildTextOpt("description")
-  result.properties = updateProperties(parentRp, rNode)
-
-  if result.derivedFrom.isSome and (not rNode.child("size").isNil or not rNode.child("access").isNil):
-    raise newException(SVDError, "Not supported: derived register '" & result.name & "' redefines size or access.")
-
-  let fieldsTag = rnode.child("fields")
-  if not isNil(fieldsTag):
-    for fieldNode in fieldsTag.findAllDirect("field"):
-      result.fields.add fieldNode.parseField
-
-  result.dimGroup = rNode.parseDimElementGroup()
-
-func parseCluster(cNode: XmlNode, parentRp: SvdRegisterProperties): SvdCluster =
-  assert cNode.tag == "cluster"
-  result = new(SvdCluster)
-
-  result.name = cNode.getChildTextExc("name")
-  result.baseName = result.name.stripPlaceHolder
-  result.derivedFrom = cNode.attrOpt("derivedFrom")
-  result.description = cNode.getChildTextOpt("description")
-  result.headerStructName = cNode.getChildTextOpt("headerStructName")
-  result.addressOffset = cNode.getChildTextExc("addressOffset").parseHexOrDecInt.Natural
-  let rp = updateProperties(parentRp, cNode)
-
-  for childClusterNode in cNode.findAllDirect("cluster"):
-    result.clusters.add childClusterNode.parseCluster(rp)
-  for registerNode in cNode.findAllDirect("register"):
-    result.registers.add registerNode.parseRegister(rp)
-
-  result.dimGroup = cNode.parseDimElementGroup()
+func parseProperties(node: XmlNode): SvdRegisterProperties =
+  result.size = node.getChildNaturalOpt("size")
+  result.access = node.parseAccess
+  result.resetValue = node.getChildIntOpt("resetValue")
 
 
-func parsePeripheral(pNode: XmlNode, parentRp: SvdRegisterProperties): SvdPeripheral =
+# Forward declaration for mutually recursive procs
+func parseRegisterTreeNode(xml: XmlNode, parent: SvdId): SvdRegisterTreeNode
+
+
+func parseChildRegisters(xml: XmlNode, parent: SvdId): Option[seq[SvdRegisterTreeNode]] =
+  var regNodes: seq[SvdRegisterTreeNode]
+  for xmlChild in xml:
+    if xmlChild.kind == xnElement and xmlChild.tag in ["register", "cluster"]:
+      regNodes.add parseRegisterTreeNode(xmlChild, parent)
+  if regNodes.len > 0:
+    result = some regNodes
+
+
+func parseRegisterTreeNode(xml: XmlNode, parent: SvdId): SvdRegisterTreeNode =
+  case xml.tag:
+  of "register":
+    result = SvdRegisterTreeNode(kind: rnkRegister)
+  of "cluster":
+    result = SvdRegisterTreeNode(kind: rnkCluster)
+  else:
+    raise newException(ValueError, "Unknown tag " & xml.tag & " for register tree.")
+
+  result.name = xml.getChildTextExc("name")
+  result.baseName = stripPlaceHolder result.name
+  result.id = parent / result.name
+  result.derivedFrom = xml.attrOpt("derivedFrom")
+  result.addressOffset = xml.getChildTextExc("addressOffset").parseHexOrDecInt.Natural
+  result.description = xml.getChildTextOpt("description")
+  result.properties = xml.parseProperties()
+  result.dimGroup = xml.parseDimElementGroup()
+
+  case result.kind:
+  of rnkRegister:
+    let fieldsTag = xml.child("fields")
+    if not isNil(fieldsTag):
+      for fieldNode in fieldsTag.findAllDirect("field"):
+        result.fields.add fieldNode.parseField
+  of rnkCluster:
+    result.headerStructName = xml.getChildTextOpt("headerStructName")
+    result.registers = xml.parseChildRegisters(result.id)
+
+
+func parsePeripheral(pNode: XmlNode): SvdPeripheral =
   assert pNode.tag == "peripheral"
-  result = new(SvdPeripheral)
 
+  new result
   result.name = pNode.getChildTextExc("name")
-  result.baseName = result.name.stripPlaceHolder
+  result.baseName = stripPlaceHolder result.name
+  result.id = result.name.toSvdId
   result.derivedFrom = pNode.attrOpt("derivedFrom")
   result.description = pNode.getChildTextOpt("description")
   result.baseAddress = pNode.getChildTextExc("baseAddress").parseHexOrDecInt.Natural
   result.appendToName = pNode.getChildTextOpt("appendToName")
   result.prependToName = pNode.getChildTextOpt("prependToName")
   result.headerStructName = pNode.getChildTextOpt("headerStructName")
-
-  let rp = updateProperties(parentRp, pNode)
+  result.properties = parseProperties(pNode)
 
   for intNode in pNode.findAllDirect("interrupt"):
     result.interrupts.add SvdInterrupt(
       name: intNode.getChildTextExc("name"),
-      description: intNode.getChildTextOpt("description"),
-      value: intNode.getChildTextExc("value").parseHexOrDecInt
+      description: intNode.getChildTextDefault("description", ""),
+      value: intNode.getChildTextExc("value").parseHexOrDecInt.int
     )
-
-  let registersNode = pNode.child("registers")
-  if not isNil(registersNode):
-    for clusterNode in registersNode.findAllDirect("cluster"):
-      result.clusters.add clusterNode.parseCluster(rp)
-    for registerNode in registersNode.findAllDirect("register"):
-      result.registers.add registerNode.parseRegister(rp)
 
   result.dimGroup = pNode.parseDimElementGroup()
 
+  let registersNode = pNode.child("registers")
+  if registersNode.isNil:
+    result.registers = none seq[SvdRegisterTreeNode]
+  else:
+    result.registers = registersNode.parseChildRegisters(result.id)
 
-###############################################################################
-# Public Procedures
-###############################################################################
+
 proc readSVD*(path: string): SvdDevice =
   result = SvdDevice.new()
   let
@@ -274,11 +297,12 @@ proc readSVD*(path: string): SvdDevice =
     endian: cpuNode.getChildTextExc("endian"),
     mpuPresent: cpuNode.getChildTextExc("mpuPresent").parseBool,
     fpuPresent: cpuNode.getChildTextExc("fpuPresent").parseBool(),
-    nvicPrioBits: cpuNode.getChildTextExc("nvicPrioBits").parseHexOrDecInt(),
+    nvicPrioBits: cpuNode.getChildTextExc("nvicPrioBits").parseHexOrDecInt.int,
     vendorSystickConfig: cpuNode.getChildTextExc("vendorSystickConfig").parseBool,
     vtorPresent: cpuNode.getChildBoolOrDefault("vtorPresent", true)
   )
 
-  let deviceRp = SvdRegisterProperties(size: 32, access: raReadWrite).updateProperties(xml)
+  result.properties = parseProperties(xml)
   for pNode in xml.getChildOrError("peripherals").findAllDirect("peripheral"):
-    result.peripherals.add pNode.parsePeripheral(deviceRp)
+    let periph =  pNode.parsePeripheral
+    result.peripherals[periph.id] = periph

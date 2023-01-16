@@ -1,6 +1,5 @@
 import std/strutils
 import regex
-import ./basetypes
 
 const nimKeywords : seq[string] = """
 addr and as asm
@@ -59,23 +58,7 @@ func stripPlaceHolder*(s: string): string =
   const pat = re"(%s|_%s$|_?\[%s\]$)"
   s.replace(pat, "")
 
-func getPeriphByName*(dev: SvdDevice, name: string): SvdPeripheral =
-  for per in dev.peripherals:
-    if per.name == name: return per
-  raise newException(ValueError, name & " not found")
 
-func findRegisterByName*(p: SvdPeripheral, name: string): SvdRegister =
-  for reg in p.registers:
-    if reg.name == name: return reg
-
-  var clusterStack: seq[SvdCluster]
-  for cls in p.clusters:
-    clusterStack.add cls
-  while clusterStack.len > 0:
-    let cls = clusterStack.pop
-    for reg in cls.registers:
-      if reg.name == name: return reg
-    for cc in cls.clusters:
-      clusterStack.add cc
-
-  raise newException(ValueError, name & " not found")
+iterator ritems*[T](s: openArray[T]): T =
+  for i in countdown(s.high, s.low):
+    yield s[i]

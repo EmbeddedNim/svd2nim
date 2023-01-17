@@ -221,7 +221,7 @@ SAMD21 clock system](https://blog.thea.codes/understanding-the-sam-d21-clocks/).
 Larger examples:
   * [The complete code to enable the 48 MHz DFLL clock on SAMD21](https://github.com/auxym/nim-on-samd21/blob/master/src/clocks.nim)
 
-  * [SAMD21 GPIO driver leveraging macros](https://github.com/auxym/nim-on-samd21/blob/master/src/clocks.nim)
+  * [SAMD21 GPIO driver leveraging macros](https://github.com/auxym/nim-on-samd21/blob/master/src/port.nim)
 
 ```nim
 import atsamd21g18a
@@ -246,6 +246,8 @@ proc initDfll48m*() =
   # Wait for the external crystal to be ready
   # Read the PCLKSR register and get the XORSC32KRDY bitfield from its value
   while not SYSCTRL.PCLKSR.read().XOSC32KRDY: discard
+
+  # (...)
 ```
 
 ### Core header bindings
@@ -254,9 +256,9 @@ The "core" C header file for a given ARM Cortex-M CPU  (eg, `core_cm0plus.h`
 for Cortex-M0+) contains functions related to peripherals that are common to
 the CPU core, such as the NVIC (interrupt controller) and the SysTick Timer.
 
-When `svd2nim` is called with the `--include-core` option, a second file,
-containing bindings for the core header, will be generated in the same output
-directory as the main device module (eg.  core_cm0plus.nim). This Nim file is
+When `svd2nim` is called with the `--include-core` option, a second file (eg.
+core_cm0plus.nim), containing bindings for the core header, will be generated in
+the same output directory as the main device module . This Nim file is
 `include`d in the main device module (and cannot de used standalone, as it
 depends on many things in the device module). This means that when
 `--include-core` is used, the resulting Nim module requires that the
@@ -272,8 +274,8 @@ https://arm-software.github.io/CMSIS_5/Core/html/modules.html
 See the nim-on-samd21 repository, linked in the examples section above, for an
 example on building the Nim core bindings against the CMSIS C headers.
 
- Currently only the `core_cm0plus.nim` module, for Cortex-M0+ CPUs, is provided
- by svd2nim , but PRs are welcome for others.
+Currently only the `core_cm0plus.nim` module, for Cortex-M0+ CPUs, is provided
+by svd2nim , but PRs are welcome for others.
 
 ## License
 

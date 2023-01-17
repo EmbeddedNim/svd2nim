@@ -743,7 +743,7 @@ proc renderDeviceConsts(dev: SvdDevice, codegenSymbols: var HashSet[string], out
 
 proc renderCoreInclude(dev: SvdDevice, outf: File, dirPath: string) =
   const coreBindings = {
-    "core_cm0plus": staticRead("core/core_cm0plus.nim")
+    "core_cm0plus": staticRead("../core/core_cm0plus.nim")
   }.toTable
 
   let coreFile = case dev.cpu.name:

@@ -5,8 +5,9 @@ description = "Convert CMSIS ARM SVD files to nim register memory mappings"
 license     = "MIT"
 bin         = @["svd2nim"]
 binDir      = "build/"
+srcDir      = "src"
 
-# Deps
+#  Deps
 
 requires "nim >= 1.4"
 requires "regex >= 0.19.0"

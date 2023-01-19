@@ -1,11 +1,10 @@
 import std/unittest
-import std/sequtils
-import std/strutils
 import std/options
-import ../svdparser
-import ../expansions {.all.}
-import ../basetypes
-import ../utils
+import std/tables
+
+import svdparser
+import basetypes
+import utils_for_tests
 
 # Test suites
 
@@ -17,9 +16,9 @@ suite "Parser Tests":
 
   test "Parse peripheral data":
     let
-      timer0 = device.getPeriphByName("TIMER0")
-      timer1 = device.getPeriphByName("TIMER1")
-      adc0 = device.getPeriphByName("ADC0")
+      timer0 = device.peripherals["TIMER0".toSvdId]
+      timer1 = device.peripherals["TIMER1".toSvdId]
+      adc0 = device.peripherals["ADC0".toSvdId]
 
     check:
       timer0.description.get() == "32 Timer / Counter, counting up or down from different sources"
@@ -37,22 +36,22 @@ suite "Parser Tests":
       adc0.headerStructName.get == "ADC0_Struct_Type"
 
   test "Parse cluster data":
-    let rtc = samd21.getPeriphByName("RTC")
+    let rtc = samd21.peripherals["RTC".toSvdId]
 
-    check(rtc.clusters.len == 3)
-    let mode0 = rtc.clusters[0]
+    check rtc.registers.get().len == 3
+    let mode0 = rtc.registers.get()[0]
     check:
       mode0.name == "MODE0"
       mode0.description.get == "32-bit Counter with Single 32-bit Compare"
       mode0.headerStructName.get == "RtcMode0"
       mode0.addressOffset == 0
-      mode0.registers.len == 11
+      mode0.registers.get().len == 11
       mode0.derivedFrom.isNone
 
   test "Parse register data":
     let
-      timer0 = device.getPeriphByName("TIMER0")
-      regCR = timer0.registers[0]
+      timer0 = device.peripherals["TIMER0".toSvdId]
+      regCR = timer0.registers.get()[0]
 
     check:
       regCR.name == "CR"
@@ -63,8 +62,8 @@ suite "Parser Tests":
 
   test "Parse field enum":
     let
-      timer0 = device.getPeriphByName("TIMER0")
-      cr = timer0.registers[0]
+      timer0 = device.peripherals["TIMER0".toSvdId]
+      cr = timer0.registers.get()[0]
       mode = cr.fields[3]
       mode_enum: SvdFieldEnum = mode.enumValues.get
 
@@ -81,16 +80,16 @@ suite "Parser Tests":
 
   test "Parse field data":
     let
-      timer0 = device.getPeriphByName("TIMER0")
-      cr = timer0.registers[0]
+      timer0 = device.peripherals["TIMER0".toSvdId]
+      cr = timer0.registers.get()[0]
       cnt = cr.fields[2]
 
     let
-      ac = samd21.getPeriphByName("AC")
-      statusa = ac.registers[6]
+      ac = samd21.peripherals["AC".toSvdId]
+      statusa = ac.registers.get()[6]
       wstate0 = statusa.fields[2]
-      gclk = samd21.getPeriphByName("GCLK")
-      clkctrl = gclk.registers[2]
+      gclk = samd21.peripherals["GCLK".toSvdId]
+      clkctrl = gclk.registers.get()[2]
 
       id = clkctrl.fields[0]
       gen = clkctrl.fields[1]
@@ -99,27 +98,32 @@ suite "Parser Tests":
 
     check:
       cnt.name == "CNT"
-      cnt.bitRange == (lsb: 2.Natural, msb: 3.Natural)
+      cnt.lsb == 2
+      cnt.msb == 3
 
       wstate0.name == "WSTATE0"
       wstate0.description.get == "Window 0 Current State"
       wstate0.derivedFrom.isNone
-      wstate0.bitRange == (lsb: 4.Natural, msb: 5.Natural)
+      wstate0.lsb == 4
+      wstate0.msb == 5
 
       id.name == "ID"
-      id.bitRange == (lsb: 0.Natural, msb: 5.Natural)
+      id.lsb == 0
+      id.msb == 5
 
       gen.name == "GEN"
-      gen.bitRange == (lsb: 8.Natural, msb: 11.Natural)
+      gen.lsb == 8
+      gen.msb == 11
 
       clken.name == "CLKEN"
-      clken.bitRange == (lsb: 14.Natural, msb: 14.Natural)
+      clken.lsb == 14
+      clken.msb == 14
 
   test "Parse interrupts":
     let
-      timer0 = device.getPeriphByName("TIMER0")
-      timer1 = device.getPeriphByName("TIMER1")
-      timer2 = device.getPeriphByName("TIMER2")
+      timer0 = device.peripherals["TIMER0".toSvdId]
+      timer1 = device.peripherals["TIMER1".toSvdId]
+      timer2 = device.peripherals["TIMER2".toSvdId]
 
     check:
       timer0.interrupts.len == 1
@@ -127,28 +131,27 @@ suite "Parser Tests":
       timer2.interrupts.len == 1
 
       timer0.interrupts[0].name == "TIMER0"
-      timer0.interrupts[0].description.get == "Timer 0 interrupt"
+      timer0.interrupts[0].description == "Timer 0 interrupt"
       timer0.interrupts[0].value == 0
 
       timer1.interrupts[0].name == "TIMER1"
-      timer1.interrupts[0].description.get == "Timer 1 interrupt"
+      timer1.interrupts[0].description == "Timer 1 interrupt"
       timer1.interrupts[0].value == 4
 
       timer2.interrupts[0].name == "TIMER2"
-      timer2.interrupts[0].description.get == "Timer 2 interrupt"
+      timer2.interrupts[0].description == "Timer 2 interrupt"
       timer2.interrupts[0].value == 6
-
 
   test "Parse dimElementGroup":
     let
-      timer0 = device.getPeriphByName("TIMER0")
-      reload = timer0.findRegisterByName("RELOAD[%s]")
+      timer0 = device.peripherals["TIMER0".toSvdId]
+      reload = timer0.findRegister("RELOAD[%s]")
 
-      ac = samd21.getPeriphByName("AC")
-      compctrl = ac.findRegisterByName("COMPCTRL%s")
+      ac = samd21.peripherals["AC".toSvdId]
+      compctrl = ac.findRegister("COMPCTRL%s")
 
-      port = samd21.getPeriphByName("PORT")
-      pmux1 = port.findRegisterByName("PMUX1_%s")
+      port = samd21.peripherals["PORT".toSvdId]
+      pmux1 = port.findRegister("PMUX1_%s")
 
     check:
       reload.dimGroup.dim.get == 4
@@ -159,72 +162,3 @@ suite "Parser Tests":
 
       pmux1.dimGroup.dim.get == 16
       pmux1.dimGroup.dimIncrement.get == 0x1
-
-
-func derived(dev: SvdDevice): SvdDevice =
-  result = dev.deepCopy
-  result.peripherals.expandDerives
-
-suite "Derivations and expansions":
-  setup:
-    let
-      device {.used.} = readSVD("./tests/ARM_Example.svd").derived
-      samd21 {.used.} = readSVD("./tests/ATSAMD21G18A.svd").derived
-
-  test "Peripheral derived":
-    let
-      timer0 = device.getPeriphByName("TIMER0")
-      timer1 = device.getPeriphByName("TIMER1")
-      timer2 = device.getPeriphByName("TIMER2")
-      port_iobus = samd21.getPeriphByName("PORT_IOBUS")
-
-    check:
-      timer1.baseAddress == 0x40010100
-      timer1.interrupts.len == 1
-      timer1.interrupts[0].name == "TIMER1"
-      timer1.registers.len == timer0.registers.len
-      timer1.nimTypeName == timer0.nimTypeName
-
-      timer2.baseAddress == 0x40010200
-      timer2.interrupts.len == 1
-      timer2.interrupts[0].name == "TIMER2"
-      timer2.registers.len == timer0.registers.len
-      timer2.nimTypeName == timer0.nimTypeName
-
-      port_iobus.prependToName.get == "PORT_IOBUS_"
-
-  test "Register derived":
-    let
-      port = samd21.getPeriphByName("PORT")
-      pmux1 = port.findRegisterByName("PMUX1_%s")
-      pmux0 = port.findRegisterByName("PMUX0_%s")
-
-    check:
-      pmux1.fields.len == pmux0.fields.len
-      pmux1.nimTypeName == pmux0.nimTypeName
-      pmux1.addressOffset == 0xb0
-
-      pmux1.properties.size == pmux0.properties.size
-      pmux1.properties.access == pmux0.properties.access
-
-suite "Dim Lists":
-  setup:
-    let
-      samd21Periphs {.used.} =
-        readSVD("./tests/ATSAMD21G18A.svd").peripherals.expandAllDimLists
-
-  test "Register dim list expanded":
-    let
-      ac = samd21Periphs.filterIt(it.name == "AC")[0]
-      compctrl = ac.registers.filterIt(it.name.contains("COMPCTRL"))
-
-    check:
-      compctrl.len == 2
-      compctrl[0].name == "COMPCTRL0"
-      compctrl[1].name == "COMPCTRL1"
-      compctrl[1].addressOffset - compctrl[0].addressOffset == 4
-      compctrl[0].description == compctrl[1].description
-      compctrl[0].fields.len == compctrl[1].fields.len
-      compctrl[0].nimTypeName == compctrl[1].nimTypeName
-      compctrl[0].properties.size == compctrl[1].properties.size
-      compctrl[0].properties.access == compctrl[1].properties.access

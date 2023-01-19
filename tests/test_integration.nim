@@ -4,13 +4,10 @@ import std/tables
 import std/strutils
 import std/sequtils
 import regex
+
 import ./utils
 
-# Include the generated file so we can have direct access to the register
-# pointers. Need to compile and run
-# `svd2nim --ignorePrepend tests/ATSAMD21G18A.svd` prior to compiling this
-# file. See nimble task "intTest".
-include ./atsamd21g18a
+include atsamd21g18a
 
 proc parseAddrsFile(fname: static[string]): Table[string, int] =
   var mt: RegexMatch
@@ -25,7 +22,7 @@ proc parseAddrsFile(fname: static[string]): Table[string, int] =
 macro genAddressAsserts(): untyped =
   result = nnkStmtList.newTree()
 
-  let cAddrTable = parseAddrsFile "./tests/addrs.txt"
+  let cAddrTable = parseAddrsFile "./addrs.txt"
   assert cAddrTable.len == 1258
   for (regName, regAddr) in cAddrTable.pairs:
     let

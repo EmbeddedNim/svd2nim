@@ -27,7 +27,7 @@ type CodeGenTypeDef = object
   # Nim object type definition
   name*: string
   public*: bool
-  fields*: seq[TypeDefField]
+  members*: seq[TypeDefField]
 
 type CodeGenEnumDef = object
   # Nin enum type definition
@@ -118,7 +118,7 @@ proc getRegisterPrefixSuffix(p: SvdPeripheral): (string, string) =
   return (regPrefix, regSuffix)
 
 
-proc fieldName(dev: SvdDevice, n: SvdRegisterTreeNode): string =
+proc getObjectMemberName(dev: SvdDevice, n: SvdRegisterTreeNode): string =
   case n.kind:
   of rnkRegister:
     let
@@ -129,10 +129,10 @@ proc fieldName(dev: SvdDevice, n: SvdRegisterTreeNode): string =
     # SVD spec says that appendToName/prependToName applies to "registers"
     # TODO: Check what SVDCONV does and ensure that they don't apply to clusters
     result = n.name
-  result = result.sanitizeIdent
+  result = result.stripPlaceHolder.sanitizeIdent
 
 
-proc getTypeFields[T: SvdRegisterParent](e: T, typeNames: Table[SvdId, string],
+proc getObjectMembers[T: SvdRegisterParent](e: T, typeNames: Table[SvdId, string],
                                          dev: SvdDevice): seq[TypeDefField] =
   let children = block:
     var c = toSeq e.iterRegisters
@@ -141,16 +141,16 @@ proc getTypeFields[T: SvdRegisterParent](e: T, typeNames: Table[SvdId, string],
 
   for c in children:
     let
-      fieldName = dev.fieldName(c)
-      fieldType = getDimArrayTypeExpr(c, typeNames[c.id])
-      def = TypeDefField(name: fieldName, typeName: fieldType, public: true)
+      memberName = dev.getObjectMemberName(c)
+      memberType = getDimArrayTypeExpr(c, typeNames[c.id])
+      def = TypeDefField(name: memberName, typeName: memberType, public: true)
     result.add def
 
 
 func createRegisterType(name: string): CodeGenTypeDef =
   result.name = name
   result.public = false
-  result.fields.add TypeDefField(
+  result.members.add TypeDefField(
     name: "loc",
     public: false,
     typeName: "uint"
@@ -204,7 +204,7 @@ proc createTypeDefs(dev: SvdDevice, names: Table[SvdId, string]):
     pdefs.add CodeGenTypeDef(
       name: periphTypeName,
       public: false,
-      fields: getTypeFields(periph, names, dev)
+      members: getObjectMembers(periph, names, dev)
     )
 
     # Can't use walkRegisters here in order to preserve correct ordering
@@ -225,7 +225,7 @@ proc createTypeDefs(dev: SvdDevice, names: Table[SvdId, string]):
         pdefs.add CodeGenTypeDef(
           name: tname,
           public: false,
-          fields: getTypeFields(regNode, names, dev)
+          members: getObjectMembers(regNode, names, dev)
         )
         for child in regNode.iterRegisters:
           regstack.add child
@@ -241,11 +241,12 @@ proc renderType(typ: CodeGenTypeDef, tg: File) =
     star = if typ.public: "*" else: ""
     typName = typ.name.sanitizeIdent
   tg.writeLine(fmt"type {typName}{star} = object")
-  for f in typ.fields:
+  for f in typ.members:
     let
       fstar = if f.public: "*" else: ""
       fname = f.name.stripPlaceHolder.sanitizeIdent
     tg.writeLine(Indent & fmt"{fName}{fstar}: {f.typeName}")
+
 
 func bitsize(f: SvdField): Natural =
   f.msb - f.lsb + 1
@@ -558,8 +559,9 @@ proc renderCluster(cluster: SvdRegisterTreeNode, numIndent: Natural,
                    typeMap: Table[SvdId, string], tg: File)
 
 
-proc renderObjFields(e: SvdRegisterParent, baseAddress: Natural, numIndent: Natural,
-                     dev: SvdDevice, typeMap: Table[SvdId, string], tg: File) =
+proc renderObjectMembers(e: SvdRegisterParent, baseAddress: Natural,
+                         numIndent: Natural, dev: SvdDevice,
+                         typeMap: Table[SvdId, string], tg: File) =
 
   when typeof(e) is SvdRegisterTreeNode:
     assert e.kind == rnkCluster
@@ -573,7 +575,7 @@ proc renderObjFields(e: SvdRegisterParent, baseAddress: Natural, numIndent: Natu
 
   for c in children:
     let
-      fName = dev.fieldName(c)
+      fName = dev.getObjectMemberName(c)
       typeName = typeMap[c.id]
     tg.write(fmt"{locIndent}{fName}: ")
 
@@ -601,14 +603,14 @@ proc renderCluster(cluster: SvdRegisterTreeNode, numIndent: Natural,
                     cluster.addressOffset +
                     arrIndex * (cluster.dimGroup.dimIncrement.get)
       tg.write(fmt"{locIndent}{typeName}(" & "\n")
-      renderObjFields(cluster, address, numIndent+2, dev, typeMap, tg)
+      renderObjectMembers(cluster, address, numIndent+2, dev, typeMap, tg)
       tg.write(locIndent & "),\n")
     tg.write(repeat(Indent, numIndent) & "]\n")
   else:
     let
       address = baseAddress + cluster.addressOffset
     tg.write(fmt"{typeName}(" & "\n")
-    renderObjFields(cluster, address, numIndent+1, dev, typeMap, tg)
+    renderObjectMembers(cluster, address, numIndent+1, dev, typeMap, tg)
     tg.write(repeat(Indent, numIndent) & "),\n")
 
 
@@ -625,12 +627,12 @@ proc renderPeripheral(periph: SvdPeripheral, typeMap: Table[SvdId, string],
     for arrIndex in 0 ..< (periph.dimGroup.dim.get):
       let address = periph.baseAddress + arrIndex * periph.dimGroup.dimIncrement.get
       tg.write(fmt"{Indent}{pTypeName}(" & "\n")
-      renderObjFields(periph, address, 2, dev, typeMap, tg)
+      renderObjectMembers(periph, address, 2, dev, typeMap, tg)
       tg.write(Indent & "),\n")
     tg.write(Indent & "]\n\n")
   else:
     tg.writeLine(fmt"const {insName}* = {pTypeName}(")
-    renderObjFields(periph, periph.baseAddress, 1, dev, typeMap, tg)
+    renderObjectMembers(periph, periph.baseAddress, 1, dev, typeMap, tg)
     tg.write(")\n\n")
 
   result = insname

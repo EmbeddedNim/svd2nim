@@ -336,6 +336,7 @@ func createFieldEnums(periph: SvdPeripheral, types: Table[SvdId, string],
 
 
 func intname(size: Natural): string =
+  assert size in [8, 16, 32, 64]
   "uint" & $size
 
 
@@ -505,6 +506,8 @@ func createAccessors(periph: SvdPeripheral, types: Table[SvdId, string],
       props = reg.resolvedProperties
       regTypeName = types[reg.id]
       valType = getRegValueType(reg, regTypeName)
+      intType = intname(props.size)
+      byteSize = props.size div 8
 
     if props.access.isReadable:
       var reader = CodeGenProcDef(
@@ -515,7 +518,10 @@ func createAccessors(periph: SvdPeripheral, types: Table[SvdId, string],
         retType: valType,
         pragma: @["inline"],
       )
-      reader.body = fmt"volatileLoad(cast[ptr {valType}](reg.loc))"
+      reader.body = fmt"""
+        let val = volatileLoad(cast[ptr {intType}](reg.loc))
+        copyMem(result.addrImpl, val.addrImpl, {byteSize})
+      """.dedent.strip
       result[fmt"read[{regTypeName}]"] = reader
 
     if props.access.isWritable:
@@ -529,7 +535,11 @@ func createAccessors(periph: SvdPeripheral, types: Table[SvdId, string],
         ],
         pragma: @["inline"],
       )
-      writer.body = fmt"volatileStore(cast[ptr {valType}](reg.loc), val)"
+      writer.body = fmt"""
+      var intVal: {intType}
+      copyMem(intVal.addrImpl, val.addrImpl, {byteSize})
+      volatileStore(cast[ptr {intType}](reg.loc), intVal)
+      """.dedent.strip
       result[fmt"write[{regTypeName}]"] = writer
 
       if reg.hasFields:
@@ -808,6 +818,9 @@ proc renderDevice*(dev: SvdDevice, outf: File, dirpath: string) =
     """
     when NimMajor < 2:
       {.experimental: "overloadableEnums".}
+      template addrImpl(x: untyped): untyped = unsafeAddr(x)
+    else:
+      template addrImpl(x: untyped): untyped = addr(x)
     """.dedent.strip
   outf.write "\n\n"
 

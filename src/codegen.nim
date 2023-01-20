@@ -31,9 +31,10 @@ type CodeGenTypeDef = object
 
 type CodeGenEnumDef = object
   # Nin enum type definition
-  name*: string
-  public*: bool
-  fields*: seq[tuple[key: string, val: int]]
+  name: string
+  public: bool
+  fields: seq[tuple[key: string, val: int]]
+  pragma: string
 
 type CodeGenDistinctDef = object
   # Nin enum type definition
@@ -279,7 +280,9 @@ func getEnumPrefix(enmDef: CodeGenEnumDef): string =
       "x"
 
 
-func createEnum(field: SvdField, regType: string, codegenSymbols: HashSet[string]): CodeGenEnumDef =
+func createEnum(field: SvdField, regType: string,
+                codegenSymbols: HashSet[string], size: Natural = 0):
+                CodeGenEnumDef =
   let svdEnum = field.enumValues.get
 
   var needsPrefix = false
@@ -297,8 +300,24 @@ func createEnum(field: SvdField, regType: string, codegenSymbols: HashSet[string
     for entry in result.fields.mitems:
       entry.key = prefix & entry.key
 
+  # Size pragma is used for register accessors which use an enum value type.
+  # This happens when the register defines a "singleton" field, that is, a
+  # single field whose size is equal to the register, and this singleton field
+  # defines enumeratedValues.  Not required in other cases, but it is simpler to
+  # just always generate it.
+  if size > 0:
+    result.pragma = fmt"size: {size}"
 
-func createFieldEnums(periph: SvdPeripheral, types: Table[SvdId, string],
+
+func hasSingletonField(reg: SvdRegisterTreeNode, props: ResolvedRegProperties): bool =
+  ## Check if register has single field that is the same size as
+  ## the register.
+  if reg.kind != rnkRegister: return false
+  result = reg.fields.len == 1 and reg.fields[0].bitsize == props.size
+
+
+func createFieldEnums(dev: SvdDevice, periph: SvdPeripheral,
+                      types: Table[SvdId, string],
                       codegenSymbols: HashSet[string]):
                       OrderedTable[string, CodeGenEnumDef] =
   var regset: HashSet[string]
@@ -311,7 +330,9 @@ func createFieldEnums(periph: SvdPeripheral, types: Table[SvdId, string],
 
     for field in reg.fields:
       if field.enumValues.isSome:
-        let en = createEnum(field, typeName, codegenSymbols)
+        let
+          props = resolveRegProperties(dev, reg)
+          en = createEnum(field, typeName, codegenSymbols, (props.size div 8))
         result[en.name] = en
 
 
@@ -323,6 +344,8 @@ func getRegValueType(reg: SvdRegisterTreeNode, typeName: string, props: Resolved
   assert reg.kind == rnkRegister
   if hasFields(reg, props):
     typeName.appendTypeName("Fields")
+  elif hasSingletonField(reg, props) and reg.fields[0].enumValues.isSome:
+    getEnumTypeName(reg.fields[0].enumValues.get, reg.fields[0].name, typeName)
   else:
     intname props.size
 
@@ -639,8 +662,10 @@ proc renderPeripheral(periph: SvdPeripheral, typeMap: Table[SvdId, string],
 
 
 proc renderEnum(en: CodeGenEnumDef, tg: File) =
-  let star = if en.public: "*" else: ""
-  tg.writeLine(fmt"type {en.name}{star} = enum")
+  let
+    star = if en.public: "*" else: ""
+    pragmaStr = if en.pragma.len > 0: fmt" {{.{en.pragma}.}}": else: ""
+  tg.writeLine(fmt"type {en.name}{star}{pragmaStr} = enum")
   for (k, v) in en.fields:
     tg.writeLine(fmt"{Indent}{k} = {v:#x},")
   tg.write "\n"
@@ -831,7 +856,7 @@ proc renderDevice*(dev: SvdDevice, outf: File, dirpath: string) =
       typedefs.add def
     renderDistinctTypes(typedefs, outf)
 
-    for (name, en) in createFieldEnums(p, typeMap, codeGenSymbols).pairs:
+    for (name, en) in createFieldEnums(dev, p, typeMap, codeGenSymbols).pairs:
       if name in enumDefs:
         continue
       enumDefs.incl name

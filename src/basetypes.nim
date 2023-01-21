@@ -88,6 +88,7 @@ type SvdRegisterTreeNode* = ref object
     headerStructName*: Option[string]
     registers*: Option[seq[SvdRegisterTreeNode]]
   of rnkRegister:
+    resolvedProperties*: ResolvedRegProperties
     fields*: seq[SvdField]
 
 type SvdInterrupt* = object
@@ -262,33 +263,8 @@ proc cmpAddrOffset*(a, b: SvdRegisterTreeNode): int =
   return cmp(a.addressOffset, b.addressOffset)
 
 
-func child(p: SvdRegisterParent, id: SvdId): SvdRegisterTreeNode =
+func child*(p: SvdRegisterParent, id: SvdId): SvdRegisterTreeNode =
+  ## Find child register with given id
   for c in p.iterRegisters:
     if c.id == id:
       return c
-
-func resolveRegProperties*(dev: SvdDevice, reg: SvdRegisterTreeNode):
-                           ResolvedRegProperties =
-  let periph = dev.peripherals[reg.id.parentPeripheral]
-  var
-    idStack: seq[SvdId]
-    curId = reg.id
-  while curId != periph.id:
-    idStack.add curId
-    curId = curId.parent
-
-  var props = dev.properties
-  props = props.update(periph.properties)
-
-  var parent: SvdRegisterTreeNode
-  for parentId in idStack.ritems:
-    if parent.isNil:
-      parent = periph.child(parentId)
-    else:
-      parent = parent.child(parentId)
-    assert not parent.isNil
-    props = props.update(parent.properties)
-
-  result.size = props.size.get
-  result.access = props.access.get
-  result.resetValue = props.resetValue.get

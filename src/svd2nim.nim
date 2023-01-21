@@ -36,6 +36,8 @@ proc processSvd*(path: string): SvdDevice =
   warnNotImplemented result
   result.deriveAll
   result.expandAll
+  result.resolveAllProperties
+
 
 ###############################################################################
 # Main

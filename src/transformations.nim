@@ -5,6 +5,7 @@ import std/options
 import std/algorithm
 
 import ./basetypes
+import ./utils
 
 
 func copyEnum(en: SvdFieldEnum, newParent: SvdId): SvdFieldEnum =
@@ -207,3 +208,35 @@ proc expandAll*(dev: var SvdDevice) =
     for expPeriph in p.expandAll:
       expandedPeriphs[expPeriph.id] = expPeriph
   dev.peripherals = expandedPeriphs
+
+
+func resolveRegProperties(dev: SvdDevice, reg: SvdRegisterTreeNode):
+                           ResolvedRegProperties =
+  let periph = dev.peripherals[reg.id.parentPeripheral]
+  var
+    idStack: seq[SvdId]
+    curId = reg.id
+  while curId != periph.id:
+    idStack.add curId
+    curId = curId.parent
+
+  var props = dev.properties
+  props = props.update(periph.properties)
+
+  var parent: SvdRegisterTreeNode
+  for parentId in idStack.ritems:
+    if parent.isNil:
+      parent = periph.child(parentId)
+    else:
+      parent = parent.child(parentId)
+    assert not parent.isNil
+    props = props.update(parent.properties)
+
+  result.size = props.size.get
+  result.access = props.access.get
+  result.resetValue = props.resetValue.get
+
+func resolveAllProperties*(dev: var SvdDevice) =
+  for periph in dev.peripherals.values:
+    for reg in periph.walkRegistersOnly:
+      reg.resolvedProperties = resolveRegProperties(dev, reg)

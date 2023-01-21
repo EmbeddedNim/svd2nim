@@ -253,12 +253,12 @@ func bitsize(f: SvdField): Natural =
   f.msb - f.lsb + 1
 
 
-func hasFields(r: SvdRegisterTreeNode, rprops: ResolvedRegProperties): bool =
+func hasFields(r: SvdRegisterTreeNode): bool =
   # If defines a single field of the same size as the register, then
   # consider that there is no field.
   assert r.kind == rnkRegister
   result = r.fields.len > 0 and
-    not (r.fields.len == 1 and r.fields[0].bitsize == rprops.size)
+    not (r.fields.len == 1 and r.fields[0].bitsize == r.resolvedProperties.size)
 
 
 func getEnumTypeName(enm: SvdFieldEnum, fieldName: string, regType: string): string =
@@ -309,15 +309,14 @@ func createEnum(field: SvdField, regType: string,
     result.pragma = fmt"size: {size}"
 
 
-func hasSingletonField(reg: SvdRegisterTreeNode, props: ResolvedRegProperties): bool =
+func hasSingletonField(reg: SvdRegisterTreeNode): bool =
   ## Check if register has single field that is the same size as
   ## the register.
   if reg.kind != rnkRegister: return false
-  result = reg.fields.len == 1 and reg.fields[0].bitsize == props.size
+  result = reg.fields.len == 1 and reg.fields[0].bitsize == reg.resolvedProperties.size
 
 
-func createFieldEnums(dev: SvdDevice, periph: SvdPeripheral,
-                      types: Table[SvdId, string],
+func createFieldEnums(periph: SvdPeripheral, types: Table[SvdId, string],
                       codegenSymbols: HashSet[string]):
                       OrderedTable[string, CodeGenEnumDef] =
   var regset: HashSet[string]
@@ -331,7 +330,7 @@ func createFieldEnums(dev: SvdDevice, periph: SvdPeripheral,
     for field in reg.fields:
       if field.enumValues.isSome:
         let
-          props = resolveRegProperties(dev, reg)
+          props = reg.resolvedProperties
           en = createEnum(field, typeName, codegenSymbols, (props.size div 8))
         result[en.name] = en
 
@@ -340,29 +339,28 @@ func intname(size: Natural): string =
   "uint" & $size
 
 
-func getRegValueType(reg: SvdRegisterTreeNode, typeName: string, props: ResolvedRegProperties): string =
+func getRegValueType(reg: SvdRegisterTreeNode, typeName: string): string =
   assert reg.kind == rnkRegister
-  if hasFields(reg, props):
+  if reg.hasFields:
     typeName.appendTypeName("Fields")
-  elif hasSingletonField(reg, props) and reg.fields[0].enumValues.isSome:
+  elif reg.hasSingletonField and reg.fields[0].enumValues.isSome:
     getEnumTypeName(reg.fields[0].enumValues.get, reg.fields[0].name, typeName)
   else:
-    intname props.size
+    intname reg.resolvedProperties.size
 
 
-func createBitfieldTypes(dev: SvdDevice, periph: SvdPeripheral,
-                         types: Table[SvdId, string]):
+func createBitfieldTypes(periph: SvdPeripheral, types: Table[SvdId, string]):
                          OrderedTable[string, CodeGenDistinctDef] =
   for reg in periph.walkRegistersOnly:
     let
-      props = dev.resolveRegProperties(reg)
+      props = reg.resolvedProperties
       regTypeName = types[reg.id]
 
-    if not hasFields(reg, props):
+    if not reg.hasFields:
       continue
 
     for field in reg.fields:
-      let fieldTypeName = getRegValueType(reg, regTypeName, props)
+      let fieldTypeName = getRegValueType(reg, regTypeName)
       result[fieldTypeName] = CodeGenDistinctDef(
         name: fieldTypeName,
         public: true,
@@ -381,18 +379,18 @@ func getFieldType(field: SvdField, regTypeName, implType: string): string =
     implType
 
 
-func createBitfieldAccessors(dev: SvdDevice, periph: SvdPeripheral,
+func createBitfieldAccessors(periph: SvdPeripheral,
                              types: Table[SvdId, string],
                              codegenSymbols: HashSet[string]):
                              OrderedTable[string, CodeGenProcDef] =
   for reg in periph.walkRegistersOnly:
     let
-      props = dev.resolveRegProperties(reg)
+      props = reg.resolvedProperties
       regTypeName = types[reg.id]
       implType = intname props.size
-      regValueType = getRegValueType(reg, regTypeName, props)
+      regValueType = getRegValueType(reg, regTypeName)
 
-    if not hasFields(reg, props):
+    if not reg.hasFields:
       continue
 
     for field in reg.fields:
@@ -465,15 +463,12 @@ func getFieldDefaultVal(field: SvdField, regTypeName: string, regVal: int64,
       $numVal
 
 
-func createFieldsWriter(reg: SvdRegisterTreeNode, props: ResolvedRegProperties,
-                        regTypeName, valType: string,
+func createFieldsWriter(reg: SvdRegisterTreeNode, regTypeName, valType: string,
                         codegenSymbols: HashSet[string]): CodeGenProcDef =
   ## Create a `write` method that takes fields values as arguments for
   ## registers with fields.
   assert reg.kind == rnkRegister
-
-  let implType = intname props.size
-
+  let implType = intname reg.resolvedProperties.size
   result = CodeGenProcDef(
     keyword: "proc",
     name: "write",
@@ -488,7 +483,9 @@ func createFieldsWriter(reg: SvdRegisterTreeNode, props: ResolvedRegProperties,
       argName = field.name.sanitizeIdent
       argValType = getFieldType(field, regTypeName, implType)
       valconv = if argValType != implType: "." & implType else: ""
-      defValStr = getFieldDefaultVal(field, regTypeName, props.resetValue, codegenSymbols)
+      defValStr = getFieldDefaultVal(
+        field, regTypeName, reg.resolvedProperties.resetValue, codegenSymbols
+      )
 
     result.args.add CodeGenProcDefArg(
       name: argName,
@@ -500,14 +497,14 @@ func createFieldsWriter(reg: SvdRegisterTreeNode, props: ResolvedRegProperties,
   result.body.add fmt"reg.write x.{valType}"
 
 
-func createAccessors(dev: SvdDevice, periph: SvdPeripheral,
-                     types: Table[SvdId, string], codegenSymbols: HashSet[string]):
+func createAccessors(periph: SvdPeripheral, types: Table[SvdId, string],
+                     codegenSymbols: HashSet[string]):
                      OrderedTable[string, CodeGenProcDef] =
   for reg in periph.walkRegistersOnly:
     let
-      props = dev.resolveRegProperties(reg)
+      props = reg.resolvedProperties
       regTypeName = types[reg.id]
-      valType = getRegValueType(reg, regTypeName, props)
+      valType = getRegValueType(reg, regTypeName)
 
     if props.access.isReadable:
       var reader = CodeGenProcDef(
@@ -535,9 +532,9 @@ func createAccessors(dev: SvdDevice, periph: SvdPeripheral,
       writer.body = fmt"volatileStore(cast[ptr {valType}](reg.loc), val)"
       result[fmt"write[{regTypeName}]"] = writer
 
-      if reg.hasFields(props):
+      if reg.hasFields:
         result[fmt"write_fields[{regTypeName}]"] =
-          createFieldsWriter(reg, props, regTypeName, valType, codegenSymbols)
+          createFieldsWriter(reg, regTypeName, valType, codegenSymbols)
 
     if props.access.isReadable and props.access.isWritable:
       var modTpl = CodeGenProcDef(
@@ -559,8 +556,8 @@ func createAccessors(dev: SvdDevice, periph: SvdPeripheral,
       result[fmt"modifyIt[{regTypeName}]"] = modTpl
 
 
-proc renderRegister(reg: SvdRegisterTreeNode, typeName: string, numIndent: Natural,
-                    baseAddress: Natural, tg: File) =
+proc renderRegister(reg: SvdRegisterTreeNode, typeName: string,
+                    numIndent: Natural, baseAddress: Natural, tg: File) =
   assert reg.kind == rnkRegister
 
   if reg.isDimArray:
@@ -848,7 +845,7 @@ proc renderDevice*(dev: SvdDevice, outf: File, dirpath: string) =
 
   for p in dev.peripherals.values:
     var typedefs: seq[CodeGenDistinctDef]
-    for (name, def) in createBitfieldTypes(dev, p, typeMap).pairs:
+    for (name, def) in createBitfieldTypes(p, typeMap).pairs:
       if name in fieldDistinctDefs:
         continue
       fieldDistinctDefs.incl name
@@ -856,20 +853,20 @@ proc renderDevice*(dev: SvdDevice, outf: File, dirpath: string) =
       typedefs.add def
     renderDistinctTypes(typedefs, outf)
 
-    for (name, en) in createFieldEnums(dev, p, typeMap, codeGenSymbols).pairs:
+    for (name, en) in createFieldEnums(p, typeMap, codeGenSymbols).pairs:
       if name in enumDefs:
         continue
       enumDefs.incl name
       codegenSymbols.incl en.name
       renderEnum(en, outf)
 
-    for (name, acc) in createAccessors(dev, p, typeMap, codeGenSymbols).pairs:
+    for (name, acc) in createAccessors(p, typeMap, codeGenSymbols).pairs:
       if name in accDefs:
         continue
       accDefs.incl name
       renderProcDef(acc, outf)
 
-    for (name, bfacc) in createBitfieldAccessors(dev, p, typeMap, codegenSymbols).pairs:
+    for (name, bfacc) in createBitfieldAccessors(p, typeMap, codegenSymbols).pairs:
       if name in accDefs:
         continue
       accDefs.incl name

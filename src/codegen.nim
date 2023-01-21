@@ -31,10 +31,10 @@ type CodeGenTypeDef = object
 
 type CodeGenEnumDef = object
   # Nin enum type definition
-  name: string
-  public: bool
-  fields: seq[tuple[key: string, val: int]]
-  pragma: string
+  name*: string
+  public*: bool
+  fields*: seq[tuple[key: string, val: int]]
+  pragma*: string
 
 type CodeGenDistinctDef = object
   # Nin enum type definition

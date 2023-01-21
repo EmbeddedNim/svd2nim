@@ -494,20 +494,33 @@ func createFieldsWriter(reg: SvdRegisterTreeNode, regTypeName, valType: string,
       defaultVal: some defValStr
     )
     result.body.add fmt"x.setMask(({argName}{valconv} shl {field.lsb}).masked({field.lsb} .. {field.msb}))" & "\n"
-
   result.body.add fmt"reg.write x.{valType}"
 
 
+func maxSize(s: seq[SvdRegisterTreeNode]): Natural =
+  for reg in s:
+    assert reg.kind == rnkRegister
+    if reg.resolvedProperties.size > result:
+      result = reg.resolvedProperties.size
+
+
 func createAccessors(periph: SvdPeripheral, types: Table[SvdId, string],
-                     codegenSymbols: HashSet[string]):
+                     codegenSymbols: HashSet[string],
+                     addressTab: Table[int, seq[SvdRegisterTreeNode]]):
                      OrderedTable[string, CodeGenProcDef] =
-  for reg in periph.walkRegistersOnly:
+
+  for (adr, reg) in periph.walkRegistersWithAddr:
     let
       props = reg.resolvedProperties
       regTypeName = types[reg.id]
       valType = getRegValueType(reg, regTypeName)
-      intType = intname(props.size)
-      byteSize = props.size div 8
+
+    # Ensure we dereference a pointer of the same type always in order to
+    # follow strict aliasing rules.
+    let
+      alternates = addressTab[adr]
+      intType = intname alternates.maxSize
+      hasAlternates = alternates.len > 1
 
     if props.access.isReadable:
       var reader = CodeGenProcDef(
@@ -518,10 +531,13 @@ func createAccessors(periph: SvdPeripheral, types: Table[SvdId, string],
         retType: valType,
         pragma: @["inline"],
       )
-      reader.body = fmt"""
-        let val = volatileLoad(cast[ptr {intType}](reg.loc))
-        copyMem(result.addrImpl, val.addrImpl, {byteSize})
-      """.dedent.strip
+      if hasAlternates:
+        reader.body = fmt"""
+          let val = volatileLoad(cast[ptr {intType}](reg.loc))
+          copyMem(result.addrImpl, val.addrImpl, sizeof(result))
+        """.dedent.strip
+      else:
+        reader.body = fmt"volatileLoad(cast[ptr {valType}](reg.loc))"
       result[fmt"read[{regTypeName}]"] = reader
 
     if props.access.isWritable:
@@ -535,11 +551,14 @@ func createAccessors(periph: SvdPeripheral, types: Table[SvdId, string],
         ],
         pragma: @["inline"],
       )
-      writer.body = fmt"""
-      var intVal: {intType}
-      copyMem(intVal.addrImpl, val.addrImpl, {byteSize})
-      volatileStore(cast[ptr {intType}](reg.loc), intVal)
-      """.dedent.strip
+      if hasAlternates:
+        writer.body = fmt"""
+        var intVal: {intType}
+        copyMem(intVal.addrImpl, val.addrImpl, sizeof(val))
+        volatileStore(cast[ptr {intType}](reg.loc), intVal)
+        """.dedent.strip
+      else:
+        writer.body = fmt"volatileStore(cast[ptr {valType}](reg.loc), val)"
       result[fmt"write[{regTypeName}]"] = writer
 
       if reg.hasFields:
@@ -703,7 +722,10 @@ proc renderProcDef(prd: CodeGenProcDef, tg: File) =
 
   tg.writeLine(fmt"{prd.keyword} {prd.name}{star}({argString}){retString}{pragmaStr} =")
   for line in prd.body.splitLines:
-    tg.writeLine Indent & line
+    if line.len > 0:
+      tg.writeLine Indent & line
+    else:
+      tg.writeLine ""
   tg.write "\n"
 
 
@@ -804,6 +826,14 @@ proc renderCoreInclude(dev: SvdDevice, outf: File, dirPath: string) =
 
     writeFile(joinPath(dirPath, coreFile & ".nim"), coreBindings[coreFile])
 
+
+func buildAddressTable(dev: SvdDevice): Table[int, seq[SvdRegisterTreeNode]] =
+  # Stack of (base address, Node)
+  for periph in dev.peripherals.values:
+    for (adr, node) in periph.walkRegistersWithAddr:
+      result.mgetOrPut(adr, @[]).add node
+
+
 proc renderDevice*(dev: SvdDevice, outf: File, dirpath: string) =
   outf.write("# Peripheral access API for $# microcontrollers (generated using svd2nim)\n\n" % dev.metadata.name.toUpper())
   outf.writeLine("import std/volatile")
@@ -873,7 +903,8 @@ proc renderDevice*(dev: SvdDevice, outf: File, dirpath: string) =
       codegenSymbols.incl en.name
       renderEnum(en, outf)
 
-    for (name, acc) in createAccessors(p, typeMap, codeGenSymbols).pairs:
+    let addressTab = dev.buildAddressTable
+    for (name, acc) in createAccessors(p, typeMap, codeGenSymbols, addressTab).pairs:
       if name in accDefs:
         continue
       accDefs.incl name

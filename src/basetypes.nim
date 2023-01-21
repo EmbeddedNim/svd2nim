@@ -214,6 +214,25 @@ iterator riterRegisters*[T: SvdRegisterParent](p: T): SvdRegisterTreeNode =
       yield c
 
 
+iterator walkRegistersWithAddr*(p: SvdPeripheral): (Natural, SvdRegisterTreeNode) =
+  ## Recursively iterate through the register tree and yield only register
+  ## items with their absolute address.
+  var stack: seq[(Natural, SvdRegisterTreeNode)]
+  for c in p.riterRegisters:
+    stack.add (p.baseAddress, c)
+
+  while stack.len > 0:
+    let
+      (baseAddr, node) = stack.pop
+      adr: Natural = baseAddr + node.addressOffset
+    case node.kind:
+    of rnkRegister:
+      yield (adr, node)
+    of rnkCluster:
+      for c in node.riterRegisters:
+        stack.add (adr, c)
+
+
 iterator walkRegisters*(p: SvdPeripheral): SvdRegisterTreeNode =
   ## Recursively iterate through the full register tree in depth-first order
   var stack: seq[SvdRegisterTreeNode]

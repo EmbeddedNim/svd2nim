@@ -799,6 +799,8 @@ proc renderDevice*(dev: SvdDevice, outf: File, dirpath: string) =
   outf.writeLine("import std/volatile")
   outf.writeLine("import std/bitops")
   outf.write("\n")
+  outf.writeLine("export volatile")
+  outf.write("\n")
 
   # Supress name hints
   outf.write("{.hint[name]: off.}\n\n")

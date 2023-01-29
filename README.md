@@ -273,7 +273,6 @@ is often uneeded (eg. for comparison):
 
 ```nim
 import atsamd21g18a
-import uncheckedenums
 
 # A holey enum
 type ADC_COMPCTRL_MUXPOS* {.size: 4.} = enum

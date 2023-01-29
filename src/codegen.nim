@@ -846,6 +846,7 @@ proc renderDevice*(dev: SvdDevice, dirpath: string) =
   outf.writeLine("import uncheckedenums")
   outf.write("\n")
   outf.writeLine("export volatile")
+  outf.writeLine("export uncheckedenums")
   outf.write("\n")
 
   # Supress name hints

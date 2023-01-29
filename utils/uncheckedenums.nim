@@ -27,9 +27,11 @@ func isValid*[T: enum](x: UncheckedEnum[T]): bool =
     return true
   else:
     # For holey enums we have to check every value
+    {.push warning[HoleEnumConv]:off.}
     for entry in items(T):
       if entry.int == x.v:
         return true
+    {.pop.}
     return false
 
 

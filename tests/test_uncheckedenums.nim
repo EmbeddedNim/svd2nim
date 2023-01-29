@@ -53,3 +53,38 @@ suite "Unchecked Enums":
       muxposValid.isValid
       not prescInvalid.isValid
       prescValid.isValid
+
+  test "ord":
+    check:
+      muxposInvalid.ord == 0x22
+      muxposValid.ord == 0x1a
+      prescInvalid.ord == 0x10
+      prescValid.ord == 0x2
+
+  test "getUnchecked":
+    check:
+      typeof(muxposInvalid.getUnchecked) is ADC_INPUTCTRL_MUXPOS
+      typeof(muxposValid.getUnchecked) is ADC_INPUTCTRL_MUXPOS
+      muxposInvalid.getUnchecked.ord == 0x22
+      muxposValid.getUnchecked.ord == 0x1a
+      typeof(prescInvalid.getUnchecked) is ADC_CTRLB_PRESCALER
+      typeof(prescValid.getUnchecked) is ADC_CTRLB_PRESCALER
+      prescInvalid.getUnchecked.ord == 0x10
+      prescValid.getUnchecked.ord == 0x2
+
+  test "get":
+    check:
+      typeof(muxposValid.get) is ADC_INPUTCTRL_MUXPOS
+      muxposValid.get.ord == 0x1a
+      typeof(prescValid.get) is ADC_CTRLB_PRESCALER
+      prescValid.get.ord == 0x2
+      # Get for invalid values will raise a Defect
+
+  test "equality":
+    check:
+      muxposValid == muxSCALEDCOREVCC
+      muxposValid != muxPIN0
+      prescValid == DIV16
+      prescValid != DIV32
+      muxposInvalid != muxSCALEDCOREVCC
+      prescInvalid != DIV16

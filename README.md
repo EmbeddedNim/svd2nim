@@ -252,7 +252,7 @@ and `volatileLoad`, calling `modifyIt` from the top-level in a module results in
 incorrect codegen by the Nim compiler and in C compiler errors. The workaround
 is simple: ensure that all calls are made from inside a `proc`.
 
-## Unchecked Enums
+### Unchecked Enums
 
 Some bitfields have associated enum types defined by the SVD file. svd2nim
 generates these as Nim enum types, and uses the type for the bitfield accessors

@@ -150,7 +150,7 @@ proc getObjectMembers[T: SvdRegisterParent](e: T, typeNames: Table[SvdId, string
 
 func createRegisterType(name: string): CodeGenTypeDef =
   result.name = name
-  result.public = false
+  result.public = true
   result.members.add TypeDefField(
     name: "loc",
     public: false,
@@ -204,7 +204,7 @@ proc createTypeDefs(dev: SvdDevice, names: Table[SvdId, string]):
     var pdefs: seq[CodeGenTypeDef]
     pdefs.add CodeGenTypeDef(
       name: periphTypeName,
-      public: false,
+      public: true,
       members: getObjectMembers(periph, names, dev)
     )
 
@@ -225,7 +225,7 @@ proc createTypeDefs(dev: SvdDevice, names: Table[SvdId, string]):
       of rnkCluster:
         pdefs.add CodeGenTypeDef(
           name: tname,
-          public: false,
+          public: true,
           members: getObjectMembers(regNode, names, dev)
         )
         for child in regNode.iterRegisters:

@@ -1,6 +1,7 @@
 nimcache/
 .nimcache/
 build/
+tmp/
 
 *.kate-swp
 *.backup

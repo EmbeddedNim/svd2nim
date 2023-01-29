@@ -57,7 +57,6 @@ type CodeGenProcDef = object
   body*: string
 
 type CodeGenOptions* = object
-  includeCore*: bool
   ignoreAppend*: bool
   ignorePrepend*: bool
 
@@ -765,9 +764,10 @@ proc renderDeviceConsts(dev: SvdDevice, codegenSymbols: var HashSet[string], out
       outf.writeLine fmt"const {k}* = {v}"
       codeGenSymbols.incl k
 
-proc renderCoreInclude(dev: SvdDevice, outf: File, dirPath: string) =
+proc renderCoreModule(dev: SvdDevice, devFileName: string) =
   const coreBindings = {
     "core_cm0plus": staticRead("../core/core_cm0plus.nim")
+    # TODO: core module for other CPUs
   }.toTable
 
   let coreFile = case dev.cpu.name:
@@ -780,21 +780,21 @@ proc renderCoreInclude(dev: SvdDevice, outf: File, dirPath: string) =
     else:
       ""
 
+  let (dirPath, devModule, _) = splitFile devFileName
+
+  # Import the generated device module in the core module
+  let templated = coreBindings[coreFile].replace("{{DEVICE_MODULE}}", devModule)
+
   if coreFile.len == 0:
     stderr.writeLine fmt"INFO: Core header bindings not yet implemented for CPU ""{dev.cpu.name}""."
   else:
-    outf.write fmt"""
+    writeFile(joinPath(dirPath, coreFile & ".nim"), templated)
 
-    # Bindings for core header. The corresponding CMSIS header file must be found in
-    # the C compiler include path. See comment at the top of the following .nim file
-    # for details.
-    # The following line may be commented out if these bindings are not required.
-    include {coreFile}
-    """.dedent
+proc renderDevice*(dev: SvdDevice, dirpath: string) =
+  let
+    outFileName = dirPath / dev.metadata.name.toLower() & ".nim"
+    outf = open(outFileName, fmWrite)
 
-    writeFile(joinPath(dirPath, coreFile & ".nim"), coreBindings[coreFile])
-
-proc renderDevice*(dev: SvdDevice, outf: File, dirpath: string) =
   outf.write("# Peripheral access API for $# microcontrollers (generated using svd2nim)\n\n" % dev.metadata.name.toUpper())
   outf.writeLine("import std/volatile")
   outf.writeLine("import std/bitops")
@@ -817,8 +817,7 @@ proc renderDevice*(dev: SvdDevice, outf: File, dirpath: string) =
 
   renderDeviceConsts(dev, codeGenSymbols, outf)
   renderInterrupts(dev, outf)
-  if cgOpts.includeCore:
-    renderCoreInclude(dev, outf, dirPath)
+  renderCoreModule(dev, outFileName)
 
   renderHeader("# Type definitions for peripheral registers", outf)
 
@@ -873,3 +872,5 @@ proc renderDevice*(dev: SvdDevice, outf: File, dirpath: string) =
         continue
       accDefs.incl name
       renderProcDef(bfacc, outf)
+
+  outf.close()

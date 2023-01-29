@@ -68,8 +68,7 @@ proc main() =
   Options:
     -h --help           Show this screen.
     -v --version        Show version.
-    -o FILE             Specify output file. (default: ./<device_name>.nim)
-    --include-core      Include bindings for core_*.h file for CPU core
+    -o DIR              Specify output directory for generated files. (default: ./)
     --ignore-prepend    Ignore peripheral <prependToName>
     --ignore-append     Ignore peripheral <appendToName>
   """
@@ -79,19 +78,22 @@ proc main() =
   if args.contains("<SvdFile>"):
     let
       dev = processSvd($args["<SvdFile>"])
-      outFileName = if args["-o"]: $args["-o"] else: dev.metadata.name.toLower() & ".nim"
-      outf = open(outFileName, fmWrite)
+      outDirName = if args["-o"]: $args["-o"] else: getCurrentDir()
+
+    if not dirExists(outDirName):
+      stderr.writeLine "ERROR: Output directory does not exist."
+      quit(1)
 
     let cgopts = CodeGenOptions(
-      includeCore: args["--include-core"],
       ignoreAppend: args["--ignore-append"],
       ignorePrepend: args["--ignore-prepend"],
     )
 
     setOptions cgopts
-    renderDevice(dev, outf, outFileName.parentDir)
+    renderDevice(dev, outDirName)
   else:
-    echo "Try: svd2nim -h"
+    stderr.writeLine "Try: svd2nim -h"
+    quit(1)
 
 when isMainModule:
   main()

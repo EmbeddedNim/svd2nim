@@ -17,6 +17,7 @@ https://arm-software.github.io/CMSIS_5/Core/html/modules.html
 
 ]#
 
+import {{DEVICE_MODULE}}
 import std/strformat
 
 const headerStr = fmt"""
@@ -32,7 +33,7 @@ typedef enum {{
   HardFault_IRQn         =  -13, // Hard Fault, all classes of Fault
   SVCall_IRQn            =   -5, // System Service Call via SVC instruction
   PendSV_IRQn            =   -2, // Pendable request for system service
-  SysTick_IRQn           =   -1 // System Tick Timer
+  SysTick_IRQn           =   -1  // System Tick Timer
 }} IRQn_Type;
 
 #include "core_cm0plus.h"

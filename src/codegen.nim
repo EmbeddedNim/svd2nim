@@ -799,15 +799,16 @@ proc renderCoreModule(dev: SvdDevice, devFileName: string) =
     else:
       ""
 
+  if coreFile.len == 0:
+    stderr.writeLine fmt"INFO: Core header bindings not yet implemented for CPU ""{dev.cpu.name}""."
+    return
+
   let (dirPath, devModule, _) = splitFile devFileName
 
   # Import the generated device module in the core module
   let templated = coreBindings[coreFile].replace("{{DEVICE_MODULE}}", devModule)
 
-  if coreFile.len == 0:
-    stderr.writeLine fmt"INFO: Core header bindings not yet implemented for CPU ""{dev.cpu.name}""."
-  else:
-    writeFile(joinPath(dirPath, coreFile & ".nim"), templated)
+  writeFile(joinPath(dirPath, coreFile & ".nim"), templated)
 
 proc renderDevice*(dev: SvdDevice, dirpath: string) =
   let

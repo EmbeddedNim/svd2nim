@@ -589,7 +589,7 @@ proc renderRegister(reg: SvdRegisterTreeNode, typeName: string,
     tg.write(repeat(Indent, numIndent) & "]\n")
   else:
     let address = baseAddress + reg.addressOffset
-    tg.write(fmt"{typeName}(loc: {address:#x})," & "\n")
+    tg.write(fmt"{typeName}(loc: {address:#x}'u)," & "\n")
 
 
 proc renderCluster(cluster: SvdRegisterTreeNode, numIndent: Natural,

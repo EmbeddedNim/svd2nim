@@ -1,3 +1,5 @@
+import std/strformat
+
 # Package
 version     = "0.4.2"
 author      = "The svd2nim contributors"
@@ -13,6 +15,15 @@ requires "nim >= 1.4"
 requires "regex >= 0.19.0"
 requires "docopt >= 0.6.7"
 
+
+when defined windows:
+  const svd2nimExec = "svd2nim.exe"
+else:
+  const svd2nimExec = "svd2nim"
+
 before test:
+  # This is used for the "integration" test, which checks register addresses
+  # in the generated nim file.
   exec "nimble build"
-  exec "./build/svd2nim --ignore-prepend ./tests/ATSAMD21G18A.svd -o tests/atsamd21g18a.nim"
+  mkDir("tmp")
+  exec fmt"./build/{svd2nimExec} --ignore-prepend ./tests/ATSAMD21G18A.svd -o tmp"

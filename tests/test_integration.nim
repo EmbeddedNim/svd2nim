@@ -13,10 +13,23 @@ import ./utils
 
 include atsamd21g18a
 
-const allSvdFiles = [
-  "ATSAMD21G18A.svd",
-  "STM32F103.svd",
-]
+const
+  testDir = currentSourcePath().parentDir()
+
+  projectDir = testDir.parentDir()
+
+  buildDir = projectDir / "build"
+
+  allSvdFiles = [
+    "ATSAMD21G18A.svd",
+    "STM32F103.svd",
+  ]
+
+
+when defined windows:
+  const svd2nimExec = buildDir / "svd2nim.exe"
+else:
+  const svd2nimExec = buildDir / "svd2nim"
 
 
 proc parseAddrsFile(fname: static[string]): Table[string, int] =
@@ -46,12 +59,6 @@ macro genAddressAsserts(): untyped =
     #result.add newCall("echo", eqNode.toStrLit)
 
 
-when defined windows:
-  const svd2nimExec = "svd2nim.exe"
-else:
-  const svd2nimExec = "svd2nim"
-
-
 macro genTestSvdFiles: untyped =
   result = newStmtList()
   for svdFile in allSvdFiles:
@@ -59,19 +66,17 @@ macro genTestSvdFiles: untyped =
       genAst(svdFile):
         test ("convert file " & svdFile) :
           # Run svd2nim on SVD file
-          let (_, svd2nimExitcode) = execCmdEx join(
-            [fmt"../build/{svd2nimExec}", svdFile, "-o ../tmp"], " "
-          )
+          let svd2nimExitcode = execCmdEx(join(
+            [svd2nimExec, testDir / svdFile, "-o", projectDir / "tmp"], " "
+          ))[1]
           assert svd2nimExitcode == 0
 
           # Run nim check on generated nim file
           let
             modname = splitFile(svdFile)[1]
-            gendFile = ".." / "tmp" / (modname.toLowerAscii & ".nim")
-            nimCheckCmd = "nim check " & gendFile
+            gendFile = projectDir / "tmp" / (modname.toLowerAscii & ".nim")
+            nimCheckCmd = [getCurrentCompilerExe(), "check", gendFile].join " "
             nimCheckExitcode = execCmdEx(nimCheckCmd)[1]
-          echo nimCheckCmd
-          echo nimCheckExitcode
           assert nimCheckExitcode == 0
 
 

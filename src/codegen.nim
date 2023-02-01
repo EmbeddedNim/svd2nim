@@ -157,17 +157,36 @@ func createRegisterType(name: string): CodeGenTypeDef =
   )
 
 
+proc hasOwnType(dev: SvdDevice, periph: SvdPeripheral): bool =
+  var basePeriph: SvdPeripheral = nil
+  if periph.typeBase.isSome:
+    basePeriph = dev.peripherals[periph.typeBase.get]
+
+  result = periph.typeBase.isNone or (
+    (
+      periph.prependToName.isSome and
+      periph.prependToName != basePeriph.prependToName and
+      not cgOpts.ignorePrepend
+    ) or (
+      periph.appendToName.isSome and
+      periph.appendToName != basePeriph.appendToName and
+      not cgOpts.ignoreAppend
+    )
+  )
+
+
 ## Assign type names for all SVD ids
 proc buildTypeMap(dev: SvdDevice): Table[SvdId, string] =
-  # Pass 1
+  # Pass 1: Assign type names for all "base" types, those that are not derived
+  # or dim lists.
   for periph in dev.peripherals.values:
-    if periph.typeBase.isNone:
+    if dev.hasOwnType(periph):
       result[periph.id] = buildTypeName periph
     for regNode in periph.walkRegisters:
       if regNode.typeBase.isNone:
         result[regNode.id] = buildTypeName(regNode, result[regNode.id.parent])
 
-  # Pass 2
+  # Pass 2: Assign existing type names to entities which share existing types.
   for periph in dev.peripherals.values:
     if periph.id notin result:
       assert periph.typeBase.isSome

@@ -212,7 +212,7 @@ proc expandAll*(dev: var SvdDevice) =
 
 
 proc resolveRegProperties(dev: SvdDevice, reg: SvdRegisterTreeNode):
-                           ResolvedRegProperties =
+                          ResolvedRegProperties =
   let periph = dev.peripherals[reg.id.parentPeripheral]
   var
     idStack: seq[SvdId]
@@ -236,6 +236,14 @@ proc resolveRegProperties(dev: SvdDevice, reg: SvdRegisterTreeNode):
   if props.access.isNone:
     stderr.writeLine fmt"""WARNING: Property "access" for register {reg.id} is undefined. Defaulting to read-write."""
     props.access = some raReadWrite
+
+  if props.size.isNone:
+    stderr.writeLine fmt"""WARNING: Property "size" for register {reg.id} is undefined. Defaulting to 32 bits."""
+    props.size = some 32.Natural
+
+  if props.resetValue.isNone:
+    stderr.writeLine fmt"""WARNING: Property "resetValue" for register {reg.id} is undefined. Defaulting to 0x0."""
+    props.resetValue = some 0'i64
 
   result.size = props.size.get
   result.access = props.access.get

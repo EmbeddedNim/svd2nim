@@ -46,8 +46,7 @@ svd2nim - Generate Nim peripheral register APIs for ARM using CMSIS-SVD files.
   Options:
     -h --help           Show this screen.
     -v --version        Show version.
-    -o FILE             Specify output file. (default: ./<device_name>.nim)
-    --include-core      Include bindings for core_*.h file for CPU core
+    -o DIR              Specify output directory for generated files. (default: ./)
     --ignore-prepend    Ignore peripheral <prependToName>
     --ignore-append     Ignore peripheral <appendToName>
 ```

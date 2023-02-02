@@ -589,7 +589,7 @@ proc renderRegister(reg: SvdRegisterTreeNode, typeName: string,
     tg.write(repeat(Indent, numIndent) & "]\n")
   else:
     let address = baseAddress + reg.addressOffset
-    tg.write(fmt"{typeName}(loc: {address:#x})," & "\n")
+    tg.write(fmt"{typeName}(loc: {address:#x}'u)," & "\n")
 
 
 proc renderCluster(cluster: SvdRegisterTreeNode, numIndent: Natural,
@@ -715,6 +715,10 @@ proc renderProcDef(prd: CodeGenProcDef, tg: File) =
   tg.write "\n"
 
 
+func asSingleLine(s: string): string =
+  s.splitLines.mapIt(it.strip).join(" ")
+
+
 proc renderHeader(text: string, outf: File) =
   outf.write("\n")
   outf.write(repeat("#",80))
@@ -723,6 +727,7 @@ proc renderHeader(text: string, outf: File) =
   outf.write("\n")
   outf.write(repeat("#",80))
   outf.write("\n")
+
 
 proc renderInterrupts(dev: SvdDevice, outf: File) =
   renderHeader("# Interrupt Number Definition", outf)
@@ -746,8 +751,12 @@ proc renderInterrupts(dev: SvdDevice, outf: File) =
     .mapIt(it.interrupts)
     .foldl(a & b)
     .sortedByIt(it.value)
-  for iter in interrupts:
-    outf.writeLine fmt"  irq{iter.name:17} = {iter.value:4} # {iter.description}"
+  for (i, iter) in interrupts.pairs:
+    if i > 0 and iter.value == interrupts[i - 1].value:
+      # Skip duplicated interrupts
+      continue
+    outf.writeLine fmt"  irq{iter.name:17} = {iter.value:4} # {iter.description.asSingleLine}"
+
 
 func convertCpuRevision(text: string): uint =
   # Based on:
@@ -799,15 +808,16 @@ proc renderCoreModule(dev: SvdDevice, devFileName: string) =
     else:
       ""
 
+  if coreFile.len == 0:
+    stderr.writeLine fmt"INFO: Core header bindings not yet implemented for CPU ""{dev.cpu.name}""."
+    return
+
   let (dirPath, devModule, _) = splitFile devFileName
 
   # Import the generated device module in the core module
   let templated = coreBindings[coreFile].replace("{{DEVICE_MODULE}}", devModule)
 
-  if coreFile.len == 0:
-    stderr.writeLine fmt"INFO: Core header bindings not yet implemented for CPU ""{dev.cpu.name}""."
-  else:
-    writeFile(joinPath(dirPath, coreFile & ".nim"), templated)
+  writeFile(joinPath(dirPath, coreFile & ".nim"), templated)
 
 proc renderDevice*(dev: SvdDevice, dirpath: string) =
   let

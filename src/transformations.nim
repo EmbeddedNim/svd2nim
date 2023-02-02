@@ -3,6 +3,7 @@ import std/sequtils
 import std/strutils
 import std/options
 import std/algorithm
+import std/strformat
 
 import ./basetypes
 import ./utils
@@ -210,8 +211,8 @@ proc expandAll*(dev: var SvdDevice) =
   dev.peripherals = expandedPeriphs
 
 
-func resolveRegProperties(dev: SvdDevice, reg: SvdRegisterTreeNode):
-                           ResolvedRegProperties =
+proc resolveRegProperties(dev: SvdDevice, reg: SvdRegisterTreeNode):
+                          ResolvedRegProperties =
   let periph = dev.peripherals[reg.id.parentPeripheral]
   var
     idStack: seq[SvdId]
@@ -232,11 +233,23 @@ func resolveRegProperties(dev: SvdDevice, reg: SvdRegisterTreeNode):
     assert not parent.isNil
     props = props.update(parent.properties)
 
+  if props.access.isNone:
+    stderr.writeLine fmt"""WARNING: Property "access" for register {reg.id} is undefined. Defaulting to read-write."""
+    props.access = some raReadWrite
+
+  if props.size.isNone:
+    stderr.writeLine fmt"""WARNING: Property "size" for register {reg.id} is undefined. Defaulting to 32 bits."""
+    props.size = some 32.Natural
+
+  if props.resetValue.isNone:
+    stderr.writeLine fmt"""WARNING: Property "resetValue" for register {reg.id} is undefined. Defaulting to 0x0."""
+    props.resetValue = some 0'i64
+
   result.size = props.size.get
   result.access = props.access.get
   result.resetValue = props.resetValue.get
 
-func resolveAllProperties*(dev: var SvdDevice) =
+proc resolveAllProperties*(dev: var SvdDevice) =
   for periph in dev.peripherals.values:
     for reg in periph.walkRegistersOnly:
       reg.resolvedProperties = resolveRegProperties(dev, reg)

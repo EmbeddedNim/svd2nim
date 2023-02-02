@@ -39,7 +39,7 @@ suite "SAMD21 typedefs":
 
   test "Create type defs":
     check:
-      samd21Types.len == 445
+      samd21Types.len == 446
 
       # Test with a cluster
       samd21Types["TC3_Type"].members.len == 3

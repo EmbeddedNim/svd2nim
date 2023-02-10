@@ -413,11 +413,16 @@ func createBitfieldAccessors(periph: SvdPeripheral,
 
     for field in reg.fields:
       let
+        hasEnum = field.enumValues.isSome
         access = field.access.get(props.access)
         lsb = field.lsb
         msb = field.msb
-
-      let valType = getFieldType(field, regTypeName, implType)
+        valType = getFieldType(field, regTypeName, implType)
+        getterValType =
+          if hasEnum:
+            fmt"UncheckedEnum[{valType}]"
+          else:
+            valType
 
       let getterName = block:
         var n = field.name.sanitizeIdent
@@ -435,12 +440,15 @@ func createBitfieldAccessors(periph: SvdPeripheral,
           name: getterName,
           public: true,
           args: @[("r", regValueType)],
-          retType: valType,
+          retType: getterValType,
           pragma: @["inline"],
           body: fmt"r.{implType}.bitsliced({lsb} .. {msb})"
         )
-        if valType != implType:
-          getter.body &= ("." & valType)
+        if hasEnum:
+          getter.body = fmt"toUncheckedEnum[{valType}]({getter.body}.int)"
+        elif valType != implType:
+          getter.body &= ("." & getterValType)
+
         result[fmt"{getter.name}[{regValueType}]"] = getter
 
       if access.isWritable:
@@ -819,6 +827,14 @@ proc renderCoreModule(dev: SvdDevice, devFileName: string) =
 
   writeFile(joinPath(dirPath, coreFile & ".nim"), templated)
 
+
+proc renderUncheckedenums(outFileName: string) =
+  const
+    modname = "uncheckedenums.nim"
+    contents = staticRead ".." / "utils" / modname
+  writeFile(joinPath(outFileName.parentDir, modname), contents)
+
+
 proc renderDevice*(dev: SvdDevice, dirpath: string) =
   let
     outFileName = dirPath / dev.metadata.name.toLower() & ".nim"
@@ -827,8 +843,10 @@ proc renderDevice*(dev: SvdDevice, dirpath: string) =
   outf.write("# Peripheral access API for $# microcontrollers (generated using svd2nim)\n\n" % dev.metadata.name.toUpper())
   outf.writeLine("import std/volatile")
   outf.writeLine("import std/bitops")
+  outf.writeLine("import uncheckedenums")
   outf.write("\n")
   outf.writeLine("export volatile")
+  outf.writeLine("export uncheckedenums")
   outf.write("\n")
 
   # Supress name hints
@@ -847,6 +865,7 @@ proc renderDevice*(dev: SvdDevice, dirpath: string) =
   renderDeviceConsts(dev, codeGenSymbols, outf)
   renderInterrupts(dev, outf)
   renderCoreModule(dev, outFileName)
+  renderUncheckedenums(outFileName)
 
   renderHeader("# Type definitions for peripheral registers", outf)
 

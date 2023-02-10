@@ -9,7 +9,7 @@ func toUncheckedEnum*[T: enum](x: int): UncheckedEnum[T] {.inline.} =
 
 
 func ord*(e: UncheckedEnum): int {.inline.} =
-  ## Return uint value without check
+  ## Return int value without check
   e.v
 
 

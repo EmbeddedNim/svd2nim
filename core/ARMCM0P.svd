@@ -95,12 +95,92 @@ The copyright notice for the ARMCM0P.svd template file follows.
           <description>Provides identification information for the processor</description>
           <addressOffset>0x00000D00</addressOffset>
           <access>read-only</access>
+          <fields>
+            <field>
+              <name>implementer</name>
+              <lsb>24</lsb>
+              <msb>31</msb>
+            </field>
+            <field>
+              <name>variant</name>
+              <lsb>20</lsb>
+              <msb>23</msb>
+            </field>
+            <field>
+              <name>architecture</name>
+              <lsb>16</lsb>
+              <msb>19</msb>
+            </field>
+            <field>
+              <name>partno</name>
+              <lsb>4</lsb>
+              <msb>15</msb>
+            </field>
+            <field>
+              <name>revision</name>
+              <lsb>0</lsb>
+              <msb>3</msb>
+            </field>
+          </fields>
         </register>
         <register>
           <name>ICSR</name>
           <description>Interrupt Control State Register</description>
           <addressOffset>0x00000D04</addressOffset>
           <access>read-write</access>
+          <fields>
+            <field>
+              <name>nmipendset</name>
+              <bitOffset>31</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>pendsvset</name>
+              <bitOffset>28</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>pendsvclr</name>
+              <bitOffset>27</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>write-only</access>
+            </field>
+            <field>
+              <name>pendstset</name>
+              <bitOffset>26</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>pendstclr</name>
+              <bitOffset>25</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>write-only</access>
+            </field>
+            <field>
+              <name>isrpreempt</name>
+              <bitOffset>23</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-only</access>
+            </field>
+            <field>
+              <name>isrpending</name>
+              <bitOffset>22</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-only</access>
+            </field>
+            <field>
+              <name>vectpending</name>
+              <lsb>12</lsb>
+              <msb>20</msb>
+              <access>read-only</access>
+            </field>
+            <field>
+              <name>vectactive</name>
+              <lsb>9</lsb>
+              <msb>11</msb>
+              <access>read-only</access>
+            </field>
+          </fields>
         </register>
         <register>
           <name>VTOR</name>

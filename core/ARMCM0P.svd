@@ -1,6 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 
-<!-- File naming: <vendor>_<part/series name>.svd -->
+<!-- SVD File for Core peripheral registers
+
+Based on ARM's ARMCM0P.svd template file included in CMSIS_5 Github repository.
+Peripheral register definitions were added based on the following references:
+
+  - Cortex-M0+ Revision r0p1 Technical Reference Manual, ARM DDI 0484C
+  - ARMv6-M Architecture Reference Manual, ARM DDI 0419E
+  - core_cm0plus.h header source file by ARM, distributed as part of the
+    CMSIS_5 Github repository.
+
+The copyright notice for the ARMCM0P.svd template file follows.
+-->
 
 <!--
   Copyright (C) 2012 - 2018 Arm Limited. All rights reserved.
@@ -73,4 +84,73 @@
   <resetValue>0x00000000</resetValue>                             <!-- by default all bits of the registers are initialized to 0 on reset -->
   <resetMask>0xFFFFFFFF</resetMask>                               <!-- by default all 32Bits of the registers are used -->
 
+  <peripherals>
+    <peripheral>
+      <name>SCB</name>
+      <description>System Control Block</description>
+      <baseAddress>0xE000E000</baseAddress>
+      <registers>
+        <register>
+          <name>CPUID</name>
+          <description>Provides identification information for the processor</description>
+          <addressOffset>0x00000D00</addressOffset>
+          <access>read-only</access>
+        </register>
+        <register>
+          <name>ICSR</name>
+          <description>Interrupt Control State Register</description>
+          <addressOffset>0x00000D04</addressOffset>
+          <access>read-write</access>
+        </register>
+        <register>
+          <name>VTOR</name>
+          <description>Vector Table Offset Register</description>
+          <addressOffset>0x00000D08</addressOffset>
+          <access>read-write</access>
+        </register>
+        <register>
+          <name>AIRCR</name>
+          <description>Application Interrupt and Reset Control Register</description>
+          <addressOffset>0x00000D0C</addressOffset>
+          <access>read-write</access>
+        </register>
+        <register>
+          <name>SCR</name>
+          <description>System Control Register</description>
+          <addressOffset>0x00000D10</addressOffset>
+          <access>read-write</access>
+        </register>
+        <register>
+          <name>CCR</name>
+          <description>Configuration and Control Register</description>
+          <addressOffset>0x00000D14</addressOffset>
+          <access>read-only</access>
+        </register>
+        <register>
+          <name>SHPR2</name>
+          <description>System Handler Priority Register 2</description>
+          <addressOffset>0x00000D1C</addressOffset>
+          <access>read-write</access>
+        </register>
+        <register>
+          <name>SHPR3</name>
+          <description>System Handler Priority Register 3</description>
+          <addressOffset>0x00000D20</addressOffset>
+          <access>read-write</access>
+        </register>
+        <register>
+          <name>SHCSR</name>
+          <description>System Handler Control and State Register</description>
+          <addressOffset>0x00000D24</addressOffset>
+          <access>read-write</access>
+        </register>
+        <register>
+          <name>DFSR</name>
+          <description>Default Fault Status Register</description>
+          <addressOffset>0x00000D30</addressOffset>
+          <access>read-write</access>
+        </register>
+      </registers>
+    </peripheral>
+  </peripherals>
 </device>

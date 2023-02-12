@@ -27,3 +27,7 @@ before test:
   exec "nimble build"
   mkDir("tmp")
   exec fmt"./build/{svd2nimExec} --ignore-prepend ./tests/ATSAMD21G18A.svd -o tmp"
+
+task release, "Build in release mode":
+  switch("define", "release")
+  setCommand("c", "src/svd2nim.nim")

@@ -82,7 +82,7 @@ proc main() =
     --ignore-append     Ignore peripheral <appendToName>
   """
   let args = docopt(help, version=getVersion())
-  for (k, v) in args.pairs: echo fmt"{k}: {v}" # Dump args for debugging
+  # for (k, v) in args.pairs: echo fmt"{k}: {v}" # Dump args for debugging
   # Get Parameters
   if args.contains("<SvdFile>"):
     let

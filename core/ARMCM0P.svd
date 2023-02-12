@@ -130,52 +130,52 @@ The copyright notice for the ARMCM0P.svd template file follows.
           <access>read-write</access>
           <fields>
             <field>
-              <name>nmipendset</name>
+              <name>nmiPendSet</name>
               <bitOffset>31</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>pendsvset</name>
+              <name>pendSvSet</name>
               <bitOffset>28</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>pendsvclr</name>
+              <name>pendSvClr</name>
               <bitOffset>27</bitOffset>
               <bitWidth>1</bitWidth>
               <access>write-only</access>
             </field>
             <field>
-              <name>pendstset</name>
+              <name>pendStSet</name>
               <bitOffset>26</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>pendstclr</name>
+              <name>pendStClr</name>
               <bitOffset>25</bitOffset>
               <bitWidth>1</bitWidth>
               <access>write-only</access>
             </field>
             <field>
-              <name>isrpreempt</name>
+              <name>isrPreempt</name>
               <bitOffset>23</bitOffset>
               <bitWidth>1</bitWidth>
               <access>read-only</access>
             </field>
             <field>
-              <name>isrpending</name>
+              <name>isrPending</name>
               <bitOffset>22</bitOffset>
               <bitWidth>1</bitWidth>
               <access>read-only</access>
             </field>
             <field>
-              <name>vectpending</name>
+              <name>vectPending</name>
               <lsb>12</lsb>
               <msb>20</msb>
               <access>read-only</access>
             </field>
             <field>
-              <name>vectactive</name>
+              <name>vectActive</name>
               <lsb>9</lsb>
               <msb>11</msb>
               <access>read-only</access>
@@ -187,12 +187,62 @@ The copyright notice for the ARMCM0P.svd template file follows.
           <description>Vector Table Offset Register</description>
           <addressOffset>0x00000D08</addressOffset>
           <access>read-write</access>
+          <fields>
+            <field>
+              <name>tblOff</name>
+              <lsb>7</lsb>
+              <msb>31</msb>
+            </field>
+          </fields>
         </register>
         <register>
           <name>AIRCR</name>
           <description>Application Interrupt and Reset Control Register</description>
           <addressOffset>0x00000D0C</addressOffset>
           <access>read-write</access>
+          <fields>
+            <field>
+              <name>vectKey</name>
+              <lsb>31</lsb>
+              <msb>16</msb>
+              <access>write-only</access>
+              <enumeratedValues>
+                <enumeratedValue>
+                  <name>VectorKey</name>
+                  <description>Vector Key. The value 0x05FA must be written to this register, otherwise the register write is UNPREDICTABLE.</description>
+                  <value>0x05fA</value>
+                </enumeratedValue>
+              </enumeratedValues>
+            </field>
+            <field>
+              <name>endianness</name>
+              <bitOffset>15</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-only</access>
+              <enumeratedValues>
+                <enumeratedValue>
+                  <name>littleEndian</name>
+                  <value>0</value>
+                </enumeratedValue>
+                <enumeratedValue>
+                  <name>bigEndian</name>
+                  <value>1</value>
+                </enumeratedValue>
+              </enumeratedValues>
+            </field>
+            <field>
+              <name>sysResetReq</name>
+              <bitOffset>15</bitOffset>
+              <bitWidth>2</bitWidth>
+              <access>write-only</access>
+            </field>
+            <field>
+              <name>vectClrActive</name>
+              <bitOffset>15</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>write-only</access>
+            </field>
+          </fields>
         </register>
         <register>
           <name>SCR</name>

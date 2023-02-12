@@ -4,6 +4,7 @@
 import std/tables
 import std/strutils
 import std/strformat
+import std/strscans
 import std/options
 import std/os
 
@@ -43,9 +44,16 @@ proc processSvd*(path: string): SvdDevice =
 # Main
 ###############################################################################
 
+
+proc getNimbleVersion(): string {.compileTime.} =
+  let dump = staticExec "nimble dump .."
+  for ln in dump.splitLines:
+    if scanf(ln, "version: \"$*\"", result): return
+
+
 proc getVersion(): string {.compileTime.} =
   let
-    baseVersion = "0.4.3"
+    baseVersion = getNimbleVersion()
     gitTags: seq[string] = staticExec("git tag -l --points-at HEAD").split()
     prerelease = gitTags.find(baseVersion) < 0
 
@@ -56,6 +64,7 @@ proc getVersion(): string {.compileTime.} =
     else:
       baseVersion
 
+
 proc main() =
   let help = """
   svd2nim - Generate Nim peripheral register APIs for ARM using CMSIS-SVD files.
@@ -63,7 +72,7 @@ proc main() =
   Usage:
     svd2nim [options] <SvdFile>
     svd2nim (-h | --help)
-    svd2nim (-v | --version)
+    svd2nim --version
 
   Options:
     -h --help           Show this screen.
@@ -73,7 +82,7 @@ proc main() =
     --ignore-append     Ignore peripheral <appendToName>
   """
   let args = docopt(help, version=getVersion())
-  #for (k, v) in args.pairs: echo fmt"{k}: {v}" # Dump args for debugging
+  for (k, v) in args.pairs: echo fmt"{k}: {v}" # Dump args for debugging
   # Get Parameters
   if args.contains("<SvdFile>"):
     let
@@ -94,6 +103,7 @@ proc main() =
   else:
     stderr.writeLine "Try: svd2nim -h"
     quit(1)
+
 
 when isMainModule:
   main()

@@ -513,12 +513,13 @@ func createFieldsWriter(reg: SvdRegisterTreeNode, regTypeName, valType: string,
         field, regTypeName, reg.resolvedProperties.resetValue, codegenSymbols
       )
 
-    result.args.add CodeGenProcDefArg(
-      name: argName,
-      typ: argValType,
-      defaultVal: some defValStr
-    )
-    result.body.add fmt"x.setMask(({argName}{valconv} shl {field.lsb}).masked({field.lsb} .. {field.msb}))" & "\n"
+    if field.access.get(raReadWrite).isWritable:
+      result.args.add CodeGenProcDefArg(
+        name: argName,
+        typ: argValType,
+        defaultVal: some defValStr
+      )
+      result.body.add fmt"x.setMask(({argName}{valconv} shl {field.lsb}).masked({field.lsb} .. {field.msb}))" & "\n"
 
   result.body.add fmt"reg.write x.{valType}"
 
@@ -559,8 +560,11 @@ func createAccessors(periph: SvdPeripheral, types: Table[SvdId, string],
       result[fmt"write[{regTypeName}]"] = writer
 
       if reg.hasFields:
-        result[fmt"write_fields[{regTypeName}]"] =
-          createFieldsWriter(reg, regTypeName, valType, codegenSymbols)
+        let fw = createFieldsWriter(reg, regTypeName, valType, codegenSymbols)
+        # fields writer proc would have exactly one argument if all fields are read-only
+        # Only generate the fields writer if at least one field is writable
+        if fw.args.len > 1:
+          result[fmt"write_fields[{regTypeName}]"] = fw
 
     if props.access.isReadable and props.access.isWritable:
       var modTpl = CodeGenProcDef(

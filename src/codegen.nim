@@ -255,6 +255,28 @@ proc createTypeDefs(dev: SvdDevice, names: Table[SvdId, string]):
       result.add td
 
 
+proc renderNimImportExports(dev: SvdDevice, outf: File) =
+  outf.write("# Peripheral access API for $# microcontrollers (generated using svd2nim)\n\n" % dev.metadata.name.toUpper())
+  outf.writeLine("import std/volatile")
+  outf.writeLine("import std/bitops")
+  outf.writeLine("import uncheckedenums")
+  outf.write("\n")
+  outf.writeLine("export volatile")
+  outf.writeLine("export uncheckedenums")
+  outf.write("\n")
+
+  # Supress name hints
+  outf.write("{.hint[name]: off.}\n\n")
+
+  # Enable overloadable enums for nim v1.x
+  outf.write:
+    """
+    when NimMajor < 2:
+      {.experimental: "overloadableEnums".}
+    """.dedent.strip
+  outf.write "\n\n"
+
+
 proc renderType(typ: CodeGenTypeDef, tg: File) =
   let
     star = if typ.public: "*" else: ""
@@ -848,25 +870,7 @@ proc renderDevice*(dev: SvdDevice, dirpath: string) =
     outFileName = dirPath / dev.metadata.name.toLower() & ".nim"
     outf = open(outFileName, fmWrite)
 
-  outf.write("# Peripheral access API for $# microcontrollers (generated using svd2nim)\n\n" % dev.metadata.name.toUpper())
-  outf.writeLine("import std/volatile")
-  outf.writeLine("import std/bitops")
-  outf.writeLine("import uncheckedenums")
-  outf.write("\n")
-  outf.writeLine("export volatile")
-  outf.writeLine("export uncheckedenums")
-  outf.write("\n")
-
-  # Supress name hints
-  outf.write("{.hint[name]: off.}\n\n")
-
-  # Enable overloadable enums for nim v1.x
-  outf.write:
-    """
-    when NimMajor < 2:
-      {.experimental: "overloadableEnums".}
-    """.dedent.strip
-  outf.write "\n\n"
+  renderNimImportExports(dev, outf)
 
   var codeGenSymbols: HashSet[string]
 

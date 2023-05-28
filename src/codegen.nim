@@ -828,7 +828,7 @@ proc renderDeviceConsts(dev: SvdDevice, codegenSymbols: var HashSet[string], out
 
     for (k, v) in cpuConsts:
       outf.writeLine fmt"const {k}* = {v}"
-      codeGenSymbols.incl k
+      codegenSymbols.incl k
 
 proc renderCoreModule(dev: SvdDevice, devFileName: string) =
   const coreBindings = {
@@ -899,14 +899,14 @@ proc renderPeripheralRegAccessors(dev: SvdDevice, codegenSymbols: var HashSet[st
       typedefs.add def
     renderDistinctTypes(typedefs, outf)
 
-    for (name, en) in createFieldEnums(p, typeMap, codeGenSymbols).pairs:
+    for (name, en) in createFieldEnums(p, typeMap, codegenSymbols).pairs:
       if name in enumDefs:
         continue
       enumDefs.incl name
       codegenSymbols.incl en.name
       renderEnum(en, outf)
 
-    for (name, acc) in createAccessors(p, typeMap, codeGenSymbols).pairs:
+    for (name, acc) in createAccessors(p, typeMap, codegenSymbols).pairs:
       if name in accDefs:
         continue
       accDefs.incl name

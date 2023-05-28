@@ -874,6 +874,13 @@ proc renderPeripheralRegTypeDefs(dev: SvdDevice, codegenSymbols: var HashSet[str
     outf.writeLine("")
 
 
+proc renderPeripheralInstances(dev: SvdDevice, codegenSymbols: var HashSet[string], typeMap: Table[SvdId, string], outf: File) =
+  renderHeader("# Peripheral object instances", outf)
+  for periph in dev.peripherals.values:
+    let constName = renderPeripheral(periph, typeMap, dev, outf)
+    codegenSymbols.incl constName
+
+
 proc renderDevice*(dev: SvdDevice, dirpath: string) =
   let
     outFileName = dirPath / dev.metadata.name.toLower() & ".nim"
@@ -890,11 +897,8 @@ proc renderDevice*(dev: SvdDevice, dirpath: string) =
 
   let typeMap = dev.buildTypeMap
 
-  renderHeader("# Peripheral object instances", outf)
-  for periph in dev.peripherals.values:
-    let constName = renderPeripheral(periph, typeMap, dev, outf)
-    codegenSymbols.incl constName
   renderPeripheralRegTypeDefs(dev, codegenSymbols, typemap, outf)
+  renderPeripheralInstances(dev, codegenSymbols, typemap, outf)
 
   renderHeader("# Accessors for peripheral registers", outf)
 

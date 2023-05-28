@@ -881,28 +881,9 @@ proc renderPeripheralInstances(dev: SvdDevice, codegenSymbols: var HashSet[strin
     codegenSymbols.incl constName
 
 
-proc renderDevice*(dev: SvdDevice, dirpath: string) =
-  let
-    outFileName = dirPath / dev.metadata.name.toLower() & ".nim"
-    outf = open(outFileName, fmWrite)
-
-  renderNimImportExports(dev, outf)
-
-  var codeGenSymbols: HashSet[string]
-
-  renderDeviceConsts(dev, codeGenSymbols, outf)
-  renderInterrupts(dev, outf)
-  renderCoreModule(dev, outFileName)
-  renderUncheckedenums(outFileName)
-
-  let typeMap = dev.buildTypeMap
-
-  renderPeripheralRegTypeDefs(dev, codegenSymbols, typemap, outf)
-  renderPeripheralInstances(dev, codegenSymbols, typemap, outf)
-
+proc renderPeripheralRegAccessors(dev: SvdDevice, codegenSymbols: var HashSet[string], typeMap: Table[SvdId, string], outf: File) =
+  ## Use sets to deduplicate generated code types and procs
   renderHeader("# Accessors for peripheral registers", outf)
-
-  # Use sets to deduplicate generated code types and procs
   var
     fieldDistinctDefs: HashSet[string]
     enumDefs: HashSet[string]
@@ -936,5 +917,26 @@ proc renderDevice*(dev: SvdDevice, dirpath: string) =
         continue
       accDefs.incl name
       renderProcDef(bfacc, outf)
+
+
+proc renderDevice*(dev: SvdDevice, dirpath: string) =
+  let
+    outFileName = dirPath / dev.metadata.name.toLower() & ".nim"
+    outf = open(outFileName, fmWrite)
+
+  renderNimImportExports(dev, outf)
+
+  var codegenSymbols: HashSet[string]
+
+  renderDeviceConsts(dev, codegenSymbols, outf)
+  renderInterrupts(dev, outf)
+  renderCoreModule(dev, outFileName)
+  renderUncheckedenums(outFileName)
+
+  let typeMap = dev.buildTypeMap
+
+  renderPeripheralRegTypeDefs(dev, codegenSymbols, typemap, outf)
+  renderPeripheralInstances(dev, codegenSymbols, typemap, outf)
+  renderPeripheralRegAccessors(dev, codegenSymbols, typemap, outf)
 
   outf.close()

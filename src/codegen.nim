@@ -865,6 +865,15 @@ proc renderUncheckedenums(outFileName: string) =
   writeFile(joinPath(outFileName.parentDir, modname), contents)
 
 
+proc renderPeripheralRegTypeDefs(dev: SvdDevice, codegenSymbols: var HashSet[string], typeMap: Table[SvdId, string], outf: File) =
+  renderHeader("# Type definitions for peripheral registers", outf)
+  let typeDefs = dev.createTypeDefs(typeMap)
+  for t in typeDefs:
+    codegenSymbols.incl t.name
+    t.renderType(outf)
+    outf.writeLine("")
+
+
 proc renderDevice*(dev: SvdDevice, dirpath: string) =
   let
     outFileName = dirPath / dev.metadata.name.toLower() & ".nim"
@@ -879,22 +888,13 @@ proc renderDevice*(dev: SvdDevice, dirpath: string) =
   renderCoreModule(dev, outFileName)
   renderUncheckedenums(outFileName)
 
-  renderHeader("# Type definitions for peripheral registers", outf)
-
-  let
-    typeMap = dev.buildTypeMap
-    typeDefs = dev.createTypeDefs(typeMap)
-
-
-  for t in typeDefs:
-    codegenSymbols.incl t.name
-    t.renderType(outf)
-    outf.writeLine("")
+  let typeMap = dev.buildTypeMap
 
   renderHeader("# Peripheral object instances", outf)
   for periph in dev.peripherals.values:
     let constName = renderPeripheral(periph, typeMap, dev, outf)
     codegenSymbols.incl constName
+  renderPeripheralRegTypeDefs(dev, codegenSymbols, typemap, outf)
 
   renderHeader("# Accessors for peripheral registers", outf)
 

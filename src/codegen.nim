@@ -745,17 +745,22 @@ proc renderInterrupts(dev: SvdDevice, outf: File) =
   renderHeader("# Interrupt Number Definition", outf)
   outf.writeLine("type IRQn* = enum")
   let
-    cmExcHdr =  "# #### Cortex-M Processor Exception Numbers "
+    cmExcHdr =  "# #### CPU Core Exception Numbers "
     devIrqHdr = "# #### Device Peripheral Interrupts "
   template irqHeader(s: string) {.dirty.} =
     outf.writeLine(s & repeat("#", 80 - len(s)))
 
   # CPU core interupts
   irqHeader cmExcHdr
-  let coreInterrupts = CpuIrqTable[dev.cpu.name.replace("+", "PLUS")]
-  for cIrq in coreInterrupts:
-    let desc = CpuIrqArray[cIrq].description
-    outf.writeLine fmt"  {$cIrq:20} = {cIrq.int:4} # {desc}"
+  let cpuKey = dev.cpu.name.replace("+", "PLUS")
+  if cpuKey in CpuIrqTable:
+    let coreInterrupts = CpuIrqTable[cpuKey]
+    for cIrq in coreInterrupts:
+      let desc = CpuIrqArray[cIrq].description
+      outf.writeLine fmt"  {$cIrq:20} = {cIrq.int:4} # {desc}"
+  else:
+    # Unknown CPU and CPU-specific exceptions
+    outf.writeLine "# Unknown CPU, svd2nim could not generate CPU exception numbers\n"
 
   # Peripheral interrupts
   irqHeader devIrqHdr

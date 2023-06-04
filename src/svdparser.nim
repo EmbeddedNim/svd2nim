@@ -105,7 +105,7 @@ iterator findAllDirect(n: XmlNode, tag: string): XmlNode =
       yield cld
 
 
-func parseFieldEnum(eNode: XmlNode): SvdFieldEnum =
+func parseFieldEnum(eNode: XmlNode, parentId: SvdId): SvdFieldEnum =
   assert eNode.tag == "enumeratedValues"
   new result
   result.name = eNode.getChildTextOpt("name")
@@ -115,6 +115,23 @@ func parseFieldEnum(eNode: XmlNode): SvdFieldEnum =
   let usage = eNode.child("usage")
   if not isNil(usage) and usage.innerText != "read-write":
     raise newException(NotImplementedError, "Separate read/write enums not implemented")
+
+  result.id =
+    if isSome(result.name) and result.name.get.len > 0:
+      parentId / result.name.get
+    else:
+      let defaultName =
+        if usage.isNil:
+          "enum"
+        else:
+          case usage.innerText.toLower.strip:
+          of "read":
+            "readEnum"
+          of "write":
+            "writeEnum"
+          else:
+            "enum"
+      parentId / defaultName
 
   for enumValueNode in eNode.findAllDirect("enumeratedValue"):
     let valueNode = enumValueNode.child("value")
@@ -150,13 +167,14 @@ func parseAccess(node: XmlNode): Option[SvdRegisterAccess] =
     )
 
 
-func parseField(fNode: XmlNode): SvdField =
+func parseField(fNode: XmlNode, parentId: SvdId): SvdField =
   assert fNode.tag == "field"
   new result
   result.name = fNode.getChildTextExc("name")
   result.derivedFrom = fNode.attrOpt("derivedFrom")
   result.description = fNode.getChildTextOpt("description")
   result.access = fNode.parseAccess
+  result.id = parentId / result.name
 
   # Get list of child tag names
   var childTags = newSeq[string]()
@@ -190,7 +208,7 @@ func parseField(fNode: XmlNode): SvdField =
 
   let enumVals = fNode.child("enumeratedValues")
   if not isNil(enumVals):
-    result.enumValues = some(enumVals.parseFieldEnum)
+    result.enumValues = some enumVals.parseFieldEnum(result.id)
   else:
     result.enumValues = none(SvdFieldEnum)
 
@@ -239,7 +257,7 @@ func parseRegisterTreeNode(xml: XmlNode, parent: SvdId): SvdRegisterTreeNode =
     let fieldsTag = xml.child("fields")
     if not isNil(fieldsTag):
       for fieldNode in fieldsTag.findAllDirect("field"):
-        result.fields.add fieldNode.parseField
+        result.fields.add fieldNode.parseField(result.id)
   of rnkCluster:
     result.headerStructName = xml.getChildTextOpt("headerStructName")
     result.registers = xml.parseChildRegisters(result.id)

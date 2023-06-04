@@ -13,6 +13,7 @@ suite "Parser Tests":
     let
       device {.used.} = readSVD("./tests/ARM_Example.svd")
       samd21 {.used.} = readSVD("./tests/ATSAMD21G18A.svd")
+      esp32 {.used.} = readSVD("./tests/esp32.svd")
 
   test "Parse peripheral data":
     let
@@ -65,18 +66,28 @@ suite "Parser Tests":
       timer0 = device.peripherals["TIMER0".toSvdId]
       cr = timer0.registers.get()[0]
       mode = cr.fields[3]
-      mode_enum: SvdFieldEnum = mode.enumValues.get
+      modeEnum: SvdFieldEnum = mode.enumValues.get
+
+    let
+      ac = samd21.peripherals["AC".toSvdId]
+      statusa = ac.registers.get()[6]
+      wstate0 = statusa.fields[2]
+      wstate0Enum = wstate0.enumValues.get()
 
     check:
       mode.name == "MODE"
-      mode_enum.name.isNone
-      mode_enum.headerEnumName.isNone
-      mode_enum.values.len == 5
-      mode_enum.values[0] == (name: "Continous", val: 0)
-      mode_enum.values[1] == (name: "Single_ZERO_MAX", val: 1)
-      mode_enum.values[2] == (name: "Single_MATCH", val: 2)
-      mode_enum.values[3] == (name: "Reload_ZERO_MAX", val: 3)
-      mode_enum.values[4] == (name: "Reload_MATCH", val: 4)
+      modeEnum.name.isNone
+      modeEnum.id == toSvdId "TIMER0.CR.MODE.enum"
+      modeEnum.headerEnumName.isNone
+      modeEnum.values.len == 5
+      modeEnum.values[0] == (name: "Continous", val: 0)
+      modeEnum.values[1] == (name: "Single_ZERO_MAX", val: 1)
+      modeEnum.values[2] == (name: "Single_MATCH", val: 2)
+      modeEnum.values[3] == (name: "Reload_ZERO_MAX", val: 3)
+      modeEnum.values[4] == (name: "Reload_MATCH", val: 4)
+
+      wstate0Enum.name.get() == "WSTATE0Select"
+      wstate0Enum.id == toSvdId "AC.STATUSA.WSTATE0.WSTATE0Select"
 
   test "Parse field data":
     let
@@ -94,28 +105,32 @@ suite "Parser Tests":
       id = clkctrl.fields[0]
       gen = clkctrl.fields[1]
       clken = clkctrl.fields[2]
-      wrtlock = clkctrl.fields[3]
 
     check:
       cnt.name == "CNT"
+      cnt.id == toSvdId "TIMER0.CR.CNT"
       cnt.lsb == 2
       cnt.msb == 3
 
       wstate0.name == "WSTATE0"
+      wstate0.id == toSvdId "AC.STATUSA.WSTATE0"
       wstate0.description.get == "Window 0 Current State"
       wstate0.derivedFrom.isNone
       wstate0.lsb == 4
       wstate0.msb == 5
 
       id.name == "ID"
+      id.id == toSvdId "GCLK.CLKCTRL.ID"
       id.lsb == 0
       id.msb == 5
 
       gen.name == "GEN"
+      gen.id == toSvdId "GCLK.CLKCTRL.GEN"
       gen.lsb == 8
       gen.msb == 11
 
       clken.name == "CLKEN"
+      clken.id == toSvdId "GCLK.CLKCTRL.CLKEN"
       clken.lsb == 14
       clken.msb == 14
 

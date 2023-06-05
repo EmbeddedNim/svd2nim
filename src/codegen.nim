@@ -598,7 +598,7 @@ proc renderRegister(reg: SvdRegisterTreeNode, typeName: string,
                     arrIndex * (reg.dimGroup.dimIncrement.get)
       let locIndent = repeat(Indent, numIndent + 1)
       tg.write(fmt"{locIndent}{typeName}(loc: {address:#x})," & "\n")
-    tg.write(repeat(Indent, numIndent) & "]\n")
+    tg.write(repeat(Indent, numIndent) & "],\n")
   else:
     let address = baseAddress + reg.addressOffset
     tg.write(fmt"{typeName}(loc: {address:#x}'u)," & "\n")
@@ -655,7 +655,7 @@ proc renderCluster(cluster: SvdRegisterTreeNode, numIndent: Natural,
       tg.write(fmt"{locIndent}{typeName}(" & "\n")
       renderObjectMembers(cluster, address, numIndent+2, dev, typeMap, tg)
       tg.write(locIndent & "),\n")
-    tg.write(repeat(Indent, numIndent) & "]\n")
+    tg.write(repeat(Indent, numIndent) & "],\n")
   else:
     let
       address = baseAddress + cluster.addressOffset
@@ -679,7 +679,7 @@ proc renderPeripheral(periph: SvdPeripheral, typeMap: Table[SvdId, string],
       tg.write(fmt"{Indent}{pTypeName}(" & "\n")
       renderObjectMembers(periph, address, 2, dev, typeMap, tg)
       tg.write(Indent & "),\n")
-    tg.write(Indent & "]\n\n")
+    tg.write(Indent & "],\n\n")
   else:
     tg.writeLine(fmt"const {insName}* = {pTypeName}(")
     renderObjectMembers(periph, periph.baseAddress, 1, dev, typeMap, tg)

@@ -794,7 +794,7 @@ proc renderDeviceConsts(dev: SvdDevice, codegenSymbols: var HashSet[string], out
     outf.write("# Some information about this device.\n")
 
     let
-      cpuNameSan = dev.cpu.name.replace(re"(M\d+)\+", "$1PLUS")
+      cpuNameSan = dev.cpu.name.replace(re"(M\d+)\+", "$1PLUS").sanitizeIdent
       cpuConsts = {
         "DEVICE": quoted(dev.metadata.name),
         fmt"{cpuNameSan}_REV": fmt"{convertCpuRevision(dev.cpu.revision):#06x}",

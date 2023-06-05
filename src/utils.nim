@@ -34,17 +34,18 @@ func sanitizeIdent*(ident: string): string =
     if chr in IdentChars or chr.ord > 127:
       result &= chr
 
-  # Identifiers must start with a letter, otherwise prepend "x"
-  if result[0] notin IdentStartChars:
-    result = "x" & result
-
   # Underscores
   const reptab = [
     (re"_(_)+", "_"),      # Subsequent underscores
     (re"_$", ""),          # Trailing underscore
+    (re"^_", ""),          # Leading underscore
   ]
   for (reg, repl) in reptab:
     result = result.replace(reg, repl)
+
+  # Identifiers must start with a letter, otherwise prepend "x"
+  if result[0] notin IdentStartChars:
+    result = "x" & result
 
   # Language keywords: append "x" suffix
   if result.toLowerAscii.replace("_", "") in nimKeywords:

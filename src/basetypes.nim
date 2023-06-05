@@ -147,7 +147,7 @@ type SomeSvdDimable* = SvdPeripheral | SvdRegisterTreeNode | SvdField
 type SvdRegisterParent* = SvdPeripheral | SvdRegisterTreeNode
 
 ## Any SVD type with an id
-type SomeSvdId* = SvdPeripheral | SvdRegisterTreeNode | SvdField
+type SomeSvdId* = SvdPeripheral | SvdRegisterTreeNode | SvdField | SvdFieldEnum
 
 type
   ## Raised when SVD file does not meet the SVD spec
@@ -168,6 +168,9 @@ func `$`*(id: SvdId): string =
 func `/`*(a: SvdId, b: string): SvdId =
   result = a
   result.parts.add b
+
+
+func split*(id: SvdId): seq[string] = id.parts
 
 
 func parent*(id: SvdId): SvdId =

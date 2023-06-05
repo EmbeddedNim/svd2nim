@@ -826,7 +826,7 @@ proc renderCoreModule(dev: SvdDevice, devFileName: string) =
       ""
 
   if coreFile.len == 0:
-    stderr.writeLine fmt"INFO: Core header bindings not yet implemented for CPU ""{dev.cpu.name}""."
+    warn fmt"Core header bindings not implemented for CPU ""{dev.cpu.name}""."
     return
 
   let (dirPath, devModule, _) = splitFile devFileName

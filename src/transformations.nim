@@ -123,8 +123,61 @@ proc derivePeripherals(dev: var SvdDevice) =
       derivePeripheral(per, base)
 
 
+proc deriveEnum(index: TableRef[string, seq[SvdFieldEnum]], parentId: SvdId,
+                derivedFrom: string): Option[SvdFieldEnum] =
+  var base: SvdFieldEnum = nil
+  let
+    derFromParts = derivedFrom.strip.split('.')
+    candidates = index[derFromParts[^1]]
+
+  for cand in candidates:
+    let
+      candIdParts = cand.id.split
+      first = candIdParts.len - min(derFromParts.len, candIdParts.len)
+    if candIdParts[first .. candIdParts.high] == derFromParts:
+      if not base.isNil:
+        warn fmt"""Ambiguous derivedFrom "{derivedFrom}" in enumeratedValues of field {$parentId}. Ignoring this enumeratedValues entry."""
+        return none(SvdFieldEnum)
+      base = cand
+
+  if base.isNil:
+    warn fmt"""derivedFrom "{derivedFrom}" in enumeratedValues of field {$parentId} was not found. Ignoring this enumeratedValues entry."""
+    return none(SvdFieldEnum)
+
+  var resultObj = new SvdFieldEnum
+  resultObj[] = base[]
+  resultObj.id = parentId / base.id.name
+  result = some resultObj
+
+
+proc deriveEnums(dev: var SvdDevice) =
+  var enumIndex = newTable[string, seq[SvdFieldEnum]]()
+
+  # Traverse all fields to build the index
+  for per in dev.peripherals.values:
+    for reg in per.walkRegistersOnly:
+      for field in reg.fields:
+        if field.enumValues.isSome:
+          let ev = field.enumValues.get
+          if ev.name.isSome and ev.name.get.len > 0 and ev.derivedFrom.isNone:
+            enumIndex.mgetOrPut(ev.name.get(), @[]).add ev
+
+  # Traverse all fields again, this time derive enums
+  for per in dev.peripherals.values:
+    for reg in per.walkRegistersOnly:
+      for field in reg.fields:
+        if field.enumValues.isSome and
+          field.enumValues.get.derivedFrom.isSome and
+          field.enumValues.get.derivedFrom.get.len > 0:
+
+            field.enumValues = deriveEnum(
+              enumIndex, field.id, field.enumValues.get.derivedFrom.get
+            )
+
+
 proc deriveAll*(dev: var SvdDevice) =
   # Derive deepest entities first
+  dev.deriveEnums
   dev.deriveRegisterNodes
   dev.derivePeripherals
 
@@ -234,15 +287,15 @@ proc resolveRegProperties(dev: SvdDevice, reg: SvdRegisterTreeNode):
     props = props.update(parent.properties)
 
   if props.access.isNone:
-    stderr.writeLine fmt"""WARNING: Property "access" for register {reg.id} is undefined. Defaulting to read-write."""
+    warn fmt"""Property "access" for register {reg.id} is undefined. Defaulting to read-write."""
     props.access = some raReadWrite
 
   if props.size.isNone:
-    stderr.writeLine fmt"""WARNING: Property "size" for register {reg.id} is undefined. Defaulting to 32 bits."""
+    warn fmt"""Property "size" for register {reg.id} is undefined. Defaulting to 32 bits."""
     props.size = some 32.Natural
 
   if props.resetValue.isNone:
-    stderr.writeLine fmt"""WARNING: Property "resetValue" for register {reg.id} is undefined. Defaulting to 0x0."""
+    warn fmt"""Property "resetValue" for register {reg.id} is undefined. Defaulting to 0x0."""
     props.resetValue = some 0'i64
 
   result.size = props.size.get

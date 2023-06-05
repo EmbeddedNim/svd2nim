@@ -62,3 +62,6 @@ func stripPlaceHolder*(s: string): string =
 iterator ritems*[T](s: openArray[T]): T =
   for i in countdown(s.high, s.low):
     yield s[i]
+
+proc warn*(msg: string) =
+  stderr.writeLine "WARNING: " & msg

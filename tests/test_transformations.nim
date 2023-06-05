@@ -22,6 +22,7 @@ suite "SVD transformation tests":
     let
       device {.used.} = readAndTransformSvd("./tests/ARM_Example.svd", derive=true)
       samd21 {.used.} = readAndTransformSvd("./tests/ATSAMD21G18A.svd", derive=true)
+      esp32 {.used.} = readAndTransformSvd("./tests/esp32.svd", derive=true)
 
   test "Peripheral derived":
     let
@@ -55,6 +56,18 @@ suite "SVD transformation tests":
 
       pmux1.properties.size == pmux0.properties.size
       pmux1.properties.access == pmux0.properties.access
+
+  test "Enum derived":
+    let
+      timg0 = esp32.peripherals["TIMG0".toSvdId]
+      wdtcfg0 = timg0.findRegister("WDTCONFIG0")
+      wdtstg2 = wdtcfg0.findField("WDT_STG2")
+
+    check:
+      wdtstg2.enumValues.isSome
+      wdtstg2.enumValues.get.name.get == "WDT_STG3"
+      wdtstg2.enumValues.get.values.len == 4
+
 
 suite "Dim Lists":
   setup:

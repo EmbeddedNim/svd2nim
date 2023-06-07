@@ -271,3 +271,7 @@ func child*(p: SvdRegisterParent, id: SvdId): SvdRegisterTreeNode =
   for c in p.iterRegisters:
     if c.id == id:
       return c
+
+
+func bitsize*(f: SvdField): Natural =
+  f.msb - f.lsb + 1

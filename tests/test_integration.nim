@@ -23,6 +23,7 @@ const
   allSvdFiles = [
     "ATSAMD21G18A.svd",
     "STM32F103.svd",
+    "esp32.svd",
   ]
 
 

@@ -267,10 +267,6 @@ proc renderType(typ: CodeGenTypeDef, tg: File) =
     tg.writeLine(Indent & fmt"{fName}{fstar}: {f.typeName}")
 
 
-func bitsize(f: SvdField): Natural =
-  f.msb - f.lsb + 1
-
-
 func hasFields(r: SvdRegisterTreeNode): bool =
   # If defines a single field of the same size as the register, then
   # consider that there is no field.
@@ -470,11 +466,11 @@ func createBitfieldAccessors(periph: SvdPeripheral,
         result[fmt"{setter.name}[{regValueType}, {valType}]"] = setter
 
 
-func getFieldDefaultVal(field: SvdField, regTypeName: string, regVal: int64,
+func getFieldDefaultVal(field: SvdField, regTypeName: string, regProps: ResolvedRegProperties,
                         codegenSymbols: HashSet[string]): string =
   let
     fslice = field.lsb.int .. field.msb.int
-    numVal = regVal.bitsliced(fslice)
+    numVal = regProps.resetValue.bitsliced(fslice)
   result =
     if field.enumValues.isSome:
       let enumObj = createEnum(field, regTypeName, codegenSymbols)
@@ -486,7 +482,10 @@ func getFieldDefaultVal(field: SvdField, regTypeName: string, regVal: int64,
     elif field.bitsize == 1:
       $(numVal > 0)
     else:
-      $numVal
+      if numVal > (1 shl (regProps.size - 1) - 1):
+        $numVal & "." & intname(regProps.size)
+      else:
+        $numVal
 
 
 func createFieldsWriter(reg: SvdRegisterTreeNode, regTypeName, valType: string,
@@ -510,7 +509,7 @@ func createFieldsWriter(reg: SvdRegisterTreeNode, regTypeName, valType: string,
       argValType = getFieldType(field, regTypeName, implType)
       valconv = if argValType != implType: "." & implType else: ""
       defValStr = getFieldDefaultVal(
-        field, regTypeName, reg.resolvedProperties.resetValue, codegenSymbols
+        field, regTypeName, reg.resolvedProperties, codegenSymbols
       )
 
     if field.access.get(raReadWrite).isWritable:

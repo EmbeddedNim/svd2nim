@@ -565,6 +565,18 @@ func createAccessors(
       reader.body = fmt"volatileLoad(cast[ptr {valType}](reg.loc))"
       result[fmt"read[{regTypeName}]"] = reader
 
+      reader =
+        CodeGenProcDef(
+          keyword: "proc",
+          name: "read",
+          public: true,
+          args: @[("reg", fmt"static {regTypeName}")],
+          retType: valType,
+          pragma: @["inline"],
+        )
+      reader.body = fmt"volatileLoad(cast[ptr {valType}](reg.loc))"
+      result[fmt"readStatic[{regTypeName}]"] = reader
+
     if props.access.isWritable:
       var
         writer =

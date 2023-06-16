@@ -202,6 +202,30 @@ proc expand(p: SvdPeripheral): seq[SvdPeripheral] =
     result.add newElem
 
 
+proc expand(field: SvdField): seq[SvdField] =
+  ## Expand dim list Field element (bitfield)
+  if not field.isDimList: return @[field]
+  let
+    dIncr = field.dimGroup.dimIncrement.get
+    dimIndex = toSeq(0 ..< field.dimGroup.dim.get).mapIt($it)
+  for (idx, idxString) in dimIndex.pairs:
+    var newElem = new SvdField
+    newElem[] = field[]
+    newElem.name = field.name.replace("%s", idxString)
+    newElem.id = field.id.parent / newElem.name
+    newElem.lsb.inc (dIncr * idx)
+    newElem.msb.inc (dIncr * idx)
+    result.add newElem
+
+
+proc expandAllFields(p: var SvdPeripheral) =
+  for reg in p.walkRegistersOnly:
+    var newFields: seq[SvdField]
+    for field in reg.fields:
+      newFields.add field.expand
+    reg.fields = newFields
+
+
 func expand(e: SvdRegisterTreeNode): seq[SvdRegisterTreeNode] =
   ## Expand dim list node (cluster/register)
   if not e.isDimList: return @[e]
@@ -258,7 +282,8 @@ proc expandAll(periph: SvdPeripheral): seq[SvdPeripheral] =
 
 proc expandAll*(dev: var SvdDevice) =
   var expandedPeriphs: OrderedTable[SvdId, SvdPeripheral]
-  for p in dev.peripherals.values:
+  for p in dev.peripherals.mvalues:
+    expandAllFields p
     for expPeriph in p.expandAll:
       expandedPeriphs[expPeriph.id] = expPeriph
   dev.peripherals = expandedPeriphs

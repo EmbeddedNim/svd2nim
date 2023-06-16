@@ -75,6 +75,8 @@ suite "Dim Lists":
       samd21Periphs {.used.} =
         readAndTransformSvd("./tests/ATSAMD21G18A.svd", true, true).peripherals
 
+      esp32 {.used.} = readAndTransformSvd("./tests/esp32.svd", true, true)
+
   test "Register dim list expanded":
     let
       ac = samd21Periphs["AC".toSvdId]
@@ -89,3 +91,17 @@ suite "Dim Lists":
       compctrl[0].fields.len == compctrl[1].fields.len
       compctrl[0].properties.size == compctrl[1].properties.size
       compctrl[0].properties.access == compctrl[1].properties.access
+
+  test "Register field dim list expanded":
+    let int_ena = esp32.findRegister("RMT.INT_ENA".toSvdId)
+
+    check:
+      int_ena.fields.len == 32
+
+      int_ena.findField("CH0_TX_END_INT_ENA").access.get == raReadWrite
+      int_ena.findField("CH0_TX_END_INT_ENA").lsb == 0
+      int_ena.findField("CH0_TX_END_INT_ENA").bitsize == 1
+
+      int_ena.findField("CH7_TX_END_INT_ENA").access.get == raReadWrite
+      int_ena.findField("CH7_TX_END_INT_ENA").lsb == 21
+      int_ena.findField("CH7_TX_END_INT_ENA").bitsize == 1

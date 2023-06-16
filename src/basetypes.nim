@@ -3,6 +3,9 @@ import std/strutils
 import std/tables
 import ./utils
 
+export options
+export tables
+
 
 type SvdId* = object
   parts: seq[string]

@@ -26,8 +26,8 @@ proc warnNotImplemented(dev: SvdDevice) =
         if field.derivedFrom.isSome:
           warn fmt"Register field {reg.name}.{field.name} of peripheral {p.name} is derived, not implemented."
 
-        if field.dimGroup.dim.isSome:
-          warn fmt"Register field {reg.name}.{field.name} of peripheral {p.name} contains dimGroup, not implemented."
+        if field.dimGroup.dim.isSome and p.name.contains("[%s]"):
+          warn fmt"Register field {reg.name}.{field.name} of peripheral {p.name} is a dim array, not implemented."
 
 proc processSvd*(path: string): SvdDevice =
   # Parse SVD file and apply some post-processing

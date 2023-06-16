@@ -14,22 +14,20 @@ import ./basetypes
 import ./svdparser
 import ./transformations
 import ./codegen
+import ./utils
 
 proc warnNotImplemented(dev: SvdDevice) =
   for p in dev.peripherals.values:
     if p.dimGroup.dim.isSome and p.name.contains("[%s]"):
-      stderr.writeLine(fmt"WARNING: Peripheral {p.name} is a dim array, not implemented.")
+      warn fmt"Peripheral {p.name} is a dim array, not implemented."
 
     for reg in p.walkRegistersOnly:
       for field in reg.fields:
         if field.derivedFrom.isSome:
-          stderr.writeLine(fmt"WARNING: Register field {reg.name}.{field.name} of peripheral {p.name} is derived, not implemented.")
+          warn fmt"Register field {reg.name}.{field.name} of peripheral {p.name} is derived, not implemented."
 
-        if field.dimGroup.dim.isSome:
-          stderr.writeLine(fmt"WARNING: Register field {reg.name}.{field.name} of peripheral {p.name} contains dimGroup, not implemented.")
-
-        if field.enumValues.isSome and field.enumValues.get.derivedFrom.isSome:
-          stderr.writeLine(fmt"WARNING: Register field {reg.name}.{field.name} of peripheral {p.name} contains a derived enumeration, not implemented.")
+        if field.dimGroup.dim.isSome and p.name.contains("[%s]"):
+          warn fmt"Register field {reg.name}.{field.name} of peripheral {p.name} is a dim array, not implemented."
 
 proc processSvd*(path: string): SvdDevice =
   # Parse SVD file and apply some post-processing

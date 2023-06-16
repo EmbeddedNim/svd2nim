@@ -267,10 +267,6 @@ proc renderType(typ: CodeGenTypeDef, tg: File) =
     tg.writeLine(Indent & fmt"{fName}{fstar}: {f.typeName}")
 
 
-func bitsize(f: SvdField): Natural =
-  f.msb - f.lsb + 1
-
-
 func hasFields(r: SvdRegisterTreeNode): bool =
   # If defines a single field of the same size as the register, then
   # consider that there is no field.
@@ -470,11 +466,11 @@ func createBitfieldAccessors(periph: SvdPeripheral,
         result[fmt"{setter.name}[{regValueType}, {valType}]"] = setter
 
 
-func getFieldDefaultVal(field: SvdField, regTypeName: string, regVal: int64,
+func getFieldDefaultVal(field: SvdField, regTypeName: string, regProps: ResolvedRegProperties,
                         codegenSymbols: HashSet[string]): string =
   let
     fslice = field.lsb.int .. field.msb.int
-    numVal = regVal.bitsliced(fslice)
+    numVal = regProps.resetValue.bitsliced(fslice)
   result =
     if field.enumValues.isSome:
       let enumObj = createEnum(field, regTypeName, codegenSymbols)
@@ -486,7 +482,10 @@ func getFieldDefaultVal(field: SvdField, regTypeName: string, regVal: int64,
     elif field.bitsize == 1:
       $(numVal > 0)
     else:
-      $numVal
+      if numVal > (1 shl (regProps.size - 1) - 1):
+        $numVal & "." & intname(regProps.size)
+      else:
+        $numVal
 
 
 func createFieldsWriter(reg: SvdRegisterTreeNode, regTypeName, valType: string,
@@ -510,7 +509,7 @@ func createFieldsWriter(reg: SvdRegisterTreeNode, regTypeName, valType: string,
       argValType = getFieldType(field, regTypeName, implType)
       valconv = if argValType != implType: "." & implType else: ""
       defValStr = getFieldDefaultVal(
-        field, regTypeName, reg.resolvedProperties.resetValue, codegenSymbols
+        field, regTypeName, reg.resolvedProperties, codegenSymbols
       )
 
     if field.access.get(raReadWrite).isWritable:
@@ -598,7 +597,7 @@ proc renderRegister(reg: SvdRegisterTreeNode, typeName: string,
                     arrIndex * (reg.dimGroup.dimIncrement.get)
       let locIndent = repeat(Indent, numIndent + 1)
       tg.write(fmt"{locIndent}{typeName}(loc: {address:#x})," & "\n")
-    tg.write(repeat(Indent, numIndent) & "]\n")
+    tg.write(repeat(Indent, numIndent) & "],\n")
   else:
     let address = baseAddress + reg.addressOffset
     tg.write(fmt"{typeName}(loc: {address:#x}'u)," & "\n")
@@ -655,7 +654,7 @@ proc renderCluster(cluster: SvdRegisterTreeNode, numIndent: Natural,
       tg.write(fmt"{locIndent}{typeName}(" & "\n")
       renderObjectMembers(cluster, address, numIndent+2, dev, typeMap, tg)
       tg.write(locIndent & "),\n")
-    tg.write(repeat(Indent, numIndent) & "]\n")
+    tg.write(repeat(Indent, numIndent) & "],\n")
   else:
     let
       address = baseAddress + cluster.addressOffset
@@ -679,7 +678,7 @@ proc renderPeripheral(periph: SvdPeripheral, typeMap: Table[SvdId, string],
       tg.write(fmt"{Indent}{pTypeName}(" & "\n")
       renderObjectMembers(periph, address, 2, dev, typeMap, tg)
       tg.write(Indent & "),\n")
-    tg.write(Indent & "]\n\n")
+    tg.write(Indent & "],\n\n")
   else:
     tg.writeLine(fmt"const {insName}* = {pTypeName}(")
     renderObjectMembers(periph, periph.baseAddress, 1, dev, typeMap, tg)
@@ -745,17 +744,22 @@ proc renderInterrupts(dev: SvdDevice, outf: File) =
   renderHeader("# Interrupt Number Definition", outf)
   outf.writeLine("type IRQn* = enum")
   let
-    cmExcHdr =  "# #### Cortex-M Processor Exception Numbers "
+    cmExcHdr =  "# #### CPU Core Exception Numbers "
     devIrqHdr = "# #### Device Peripheral Interrupts "
   template irqHeader(s: string) {.dirty.} =
     outf.writeLine(s & repeat("#", 80 - len(s)))
 
   # CPU core interupts
   irqHeader cmExcHdr
-  let coreInterrupts = CpuIrqTable[dev.cpu.name.replace("+", "PLUS")]
-  for cIrq in coreInterrupts:
-    let desc = CpuIrqArray[cIrq].description
-    outf.writeLine fmt"  {$cIrq:20} = {cIrq.int:4} # {desc}"
+  let cpuKey = dev.cpu.name.replace("+", "PLUS")
+  if cpuKey in CpuIrqTable:
+    let coreInterrupts = CpuIrqTable[cpuKey]
+    for cIrq in coreInterrupts:
+      let desc = CpuIrqArray[cIrq].description
+      outf.writeLine fmt"  {$cIrq:20} = {cIrq.int:4} # {desc}"
+  else:
+    # Unknown CPU and CPU-specific exceptions
+    outf.writeLine "# Unknown CPU, svd2nim could not generate CPU exception numbers\n"
 
   # Peripheral interrupts
   irqHeader devIrqHdr
@@ -789,7 +793,7 @@ proc renderDeviceConsts(dev: SvdDevice, codegenSymbols: var HashSet[string], out
     outf.write("# Some information about this device.\n")
 
     let
-      cpuNameSan = dev.cpu.name.replace(re"(M\d+)\+", "$1PLUS")
+      cpuNameSan = dev.cpu.name.replace(re"(M\d+)\+", "$1PLUS").sanitizeIdent
       cpuConsts = {
         "DEVICE": quoted(dev.metadata.name),
         fmt"{cpuNameSan}_REV": fmt"{convertCpuRevision(dev.cpu.revision):#06x}",
@@ -821,7 +825,7 @@ proc renderCoreModule(dev: SvdDevice, devFileName: string) =
       ""
 
   if coreFile.len == 0:
-    stderr.writeLine fmt"INFO: Core header bindings not yet implemented for CPU ""{dev.cpu.name}""."
+    warn fmt"Core header bindings not implemented for CPU ""{dev.cpu.name}""."
     return
 
   let (dirPath, devModule, _) = splitFile devFileName

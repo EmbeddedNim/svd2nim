@@ -87,3 +87,4 @@ suite "Misc codegen tests":
       sanitizeIdent("Trail_Underscore_") == "Trail_Underscore"
       sanitizeIdent("Two__Underscores__") == "Two_Underscores"
       sanitizeIdent("ADDR") == "ADDRx" # is a keyword
+      sanitizeIdent("_1INT_CLR") == "x1INT_CLR"

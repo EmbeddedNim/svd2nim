@@ -3,6 +3,9 @@ import std/strutils
 import std/tables
 import ./utils
 
+export options
+export tables
+
 
 type SvdId* = object
   parts: seq[string]
@@ -147,7 +150,7 @@ type SomeSvdDimable* = SvdPeripheral | SvdRegisterTreeNode | SvdField
 type SvdRegisterParent* = SvdPeripheral | SvdRegisterTreeNode
 
 ## Any SVD type with an id
-type SomeSvdId* = SvdPeripheral | SvdRegisterTreeNode | SvdField
+type SomeSvdId* = SvdPeripheral | SvdRegisterTreeNode | SvdField | SvdFieldEnum
 
 type
   ## Raised when SVD file does not meet the SVD spec
@@ -168,6 +171,9 @@ func `$`*(id: SvdId): string =
 func `/`*(a: SvdId, b: string): SvdId =
   result = a
   result.parts.add b
+
+
+func split*(id: SvdId): seq[string] = id.parts
 
 
 func parent*(id: SvdId): SvdId =
@@ -268,3 +274,7 @@ func child*(p: SvdRegisterParent, id: SvdId): SvdRegisterTreeNode =
   for c in p.iterRegisters:
     if c.id == id:
       return c
+
+
+func bitsize*(f: SvdField): Natural =
+  f.msb - f.lsb + 1

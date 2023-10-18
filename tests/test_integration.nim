@@ -9,7 +9,7 @@ import std/osproc
 import std/strformat
 import regex
 
-import ./utils
+import utils
 
 include atsamd21g18a
 

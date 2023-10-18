@@ -2,10 +2,10 @@ import std/unittest
 import std/sequtils
 import std/tables
 import std/sets
-import ./codegen {.all.}
-import ./svd2nim
-import ./utils
-import ./basetypes
+import codegen {.all.}
+import svd2nim
+import utils
+import basetypes
 
 func toTable(s: seq[CodeGenTypeDef]): Table[string, CodeGenTypeDef] =
   for td in s:

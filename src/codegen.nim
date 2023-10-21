@@ -690,7 +690,7 @@ proc renderPeripheral(periph: SvdPeripheral, typeMap: Table[SvdId, string],
 proc renderEnum(en: CodeGenEnumDef, tg: File) =
   let
     star = if en.public: "*" else: ""
-    pragmaStr = if en.pragma.len > 0: fmt" {{.{en.pragma}.}}": else: ""
+    pragmaStr = if en.pragma.len > 0: fmt" {{.{en.pragma}.}}" else: ""
   tg.writeLine(fmt"type {en.name}{star}{pragmaStr} = enum")
   for (k, v) in en.fields:
     tg.writeLine(fmt"{Indent}{k} = {v:#x},")

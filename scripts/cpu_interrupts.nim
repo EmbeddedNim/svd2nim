@@ -5,7 +5,6 @@ import std/algorithm
 import std/tables
 import std/strformat
 
-
 # The following strings are from SVDConv source code
 # https://github.com/Open-CMSIS-Pack/devtools/blob/259aa1f6755bd96497acdf403a008a4ba4cb2d66/tools/svdconv/SVDModel/src/SvdTypes.cpp#L103
 #
@@ -21,7 +20,9 @@ import std/strformat
 # License for the specific language governing permissions and limitations under
 # the License.
 #//                                                                          IRQ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15     *R *U *U *P *E *E *M *M *U *P *U *E *P   *N
-const cpuDataString = """
+const
+  cpuDataString =
+    """
   { SvdTypes::CpuType::CM0      , {"CM0"                , "ARM Cortex-M0"     ,  0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 1,     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  32 } },
   { SvdTypes::CpuType::CM0PLUS  , {"CM0PLUS"            , "ARM Cortex-M0+"    ,  0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 1,     1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  32 } },
   { SvdTypes::CpuType::CM0P     , {"CM0PLUS"            , "ARM Cortex-M0+"    ,  0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 1,     1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  32 } },
@@ -42,7 +43,9 @@ const cpuDataString = """
   { SvdTypes::CpuType::CM85     , {"CM85"               , "ARM Cortex-M85"    ,  0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 0, 1, 1,     1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 0, 0, 480 } }, // MVE: 0, not generated atm
 """
 
-const interruptDataString = """
+const
+  interruptDataString =
+    """
   { SvdTypes::CpuIrqNum::IRQ0         , { "Reserved0"         , "Stack Top is loaded from first entry of vector Table on Reset"                  } },
   { SvdTypes::CpuIrqNum::IRQ1         , { "Reset"             , "Reset Vector, invoked on Power up and warm reset"                               } },
   { SvdTypes::CpuIrqNum::IRQ2         , { "NonMaskableInt"    , "Non maskable Interrupt, cannot be stopped or preempted"                         } },
@@ -62,10 +65,11 @@ const interruptDataString = """
   { SvdTypes::CpuIrqNum::IRQ_RESERVED , { "Reserved"          , "Reserved - do not use"                                                          } },
 """
 
-
 const
-  patCpuFeatures = re"""SvdTypes::CpuType::(\w+)\s*,\s*\{"(\w+)"\s*,\s*"([^"]+)"(?:\s*,\s*(\d+))*\s*\}"""
-  patIrqData = re"""SvdTypes::CpuIrqNum::IRQ(\d+)\s*,\s*\{\s*"([^"]+)"\s*,\s*"([^"]+)"\s*\}"""
+  patCpuFeatures =
+    re"""SvdTypes::CpuType::(\w+)\s*,\s*\{"(\w+)"\s*,\s*"([^"]+)"(?:\s*,\s*(\d+))*\s*\}"""
+  patIrqData =
+    re"""SvdTypes::CpuIrqNum::IRQ(\d+)\s*,\s*\{\s*"([^"]+)"\s*,\s*"([^"]+)"\s*\}"""
 
 type
   CpuIrq = object
@@ -78,8 +82,7 @@ type
     description: string
     featureFlags: array[28, bool]
 
-
-proc parseCpus: seq[CpuFeatures] =
+proc parseCpus(): seq[CpuFeatures] =
   var
     m: RegexMatch
     cpuf: CpuFeatures
@@ -87,11 +90,11 @@ proc parseCpus: seq[CpuFeatures] =
     doAssert ln.find(patCpuFeatures, m)
     cpuf.name = m.group(0, ln)[0]
     cpuf.description = m.group(2, ln)[0]
-    for i in cpuf.featureFlags.low .. cpuf.featureFlags.high:
+    for i in cpuf.featureFlags.low..cpuf.featureFlags.high:
       cpuf.featureFlags[i] = m.group(3, ln)[i].parseInt > 0
     result.add cpuf
 
-proc parseIrqs: Table[int, CpuIrq] =
+proc parseIrqs(): Table[int, CpuIrq] =
   var
     m: RegexMatch
     irq: CpuIrq

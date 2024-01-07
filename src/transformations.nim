@@ -8,12 +8,10 @@ import std/strformat
 import ./basetypes
 import ./utils
 
-
 func copyEnum(en: SvdFieldEnum, newParent: SvdId): SvdFieldEnum =
   new result
   result[] = en[]
   result.id = newParent / en.id.name
-
 
 func copyField(field: SvdField, newParent: SvdId): SvdField =
   new result
@@ -21,7 +19,6 @@ func copyField(field: SvdField, newParent: SvdId): SvdField =
   result.id = newParent / field.id.name
   if result.enumValues.isSome:
     result.enumValues = some result.enumValues.get.copyEnum(result.id)
-
 
 func copySubtree(node: SvdRegisterTreeNode, newParent: SvdId): SvdRegisterTreeNode =
   new result
@@ -32,22 +29,21 @@ func copySubtree(node: SvdRegisterTreeNode, newParent: SvdId): SvdRegisterTreeNo
   case result.kind
   of rnkCluster:
     if result.registers.isSome:
-      result.registers = some result.registers.get.mapIt(
-        copySubtree(it, result.id)
-      )
+      result.registers = some result.registers.get.mapIt(copySubtree(it, result.id))
   of rnkRegister:
     result.fields = result.fields.mapIt(it.copyField(result.id))
 
-
 func derivePeripheral*(p: var SvdPeripheral, base: SvdPeripheral) =
-  if p.prependToName.isNone: p.prependToName = base.prependToName
-  if p.appendToName.isNone: p.appendToName = base.appendToName
-  if p.headerStructName.isNone: p.headerStructName = base.headerStructName
+  if p.prependToName.isNone:
+    p.prependToName = base.prependToName
+  if p.appendToName.isNone:
+    p.appendToName = base.appendToName
+  if p.headerStructName.isNone:
+    p.headerStructName = base.headerStructName
   p.dimGroup = update(base.dimGroup, p.dimGroup)
   p.properties = update(base.properties, p.properties)
 
-  if p.registers.isNone and
-      p.headerStructName == base.headerStructName and
+  if p.registers.isNone and p.headerStructName == base.headerStructName and
       p.properties == base.properties:
     p.typeBase = some base.id
 
@@ -55,26 +51,23 @@ func derivePeripheral*(p: var SvdPeripheral, base: SvdPeripheral) =
     let regs = base.registers.get.mapIt(copySubtree(it, p.id))
     p.registers = some regs
 
-
 func deriveRegisterTreeNode*(n: var SvdRegisterTreeNode, base: SvdRegisterTreeNode) =
   assert base.kind == n.kind
   n.dimGroup = update(base.dimGroup, n.dimGroup)
   n.properties = update(base.properties, n.properties)
 
-  case n.kind:
+  case n.kind
   of rnkCluster:
     if n.headerStructName.isNone:
       n.headerStructName = base.headerStructName
 
-    if n.registers.isNone and
-        n.headerStructName == base.headerStructName and
+    if n.registers.isNone and n.headerStructName == base.headerStructName and
         n.properties == base.properties:
       n.typeBase = some base.id
 
     if n.registers.isNone and base.registers.isSome:
       let regs = base.registers.get.mapIt(copySubtree(it, n.id))
       n.registers = some regs
-
   of rnkRegister:
     if n.fields.len == 0 and n.properties == base.properties:
       n.typeBase = some base.id
@@ -82,20 +75,17 @@ func deriveRegisterTreeNode*(n: var SvdRegisterTreeNode, base: SvdRegisterTreeNo
       #TODO: Make fields Option so derives can override with no fields
       n.fields = base.fields.mapIt(copyField(it, n.id))
 
-
 func derivedBaseId[T: SomeSvdId](x: T): SvdId =
   if '.' in x.derivedFrom.get:
     x.derivedFrom.get.toSvdId
   else:
     x.id.parent / x.derivedFrom.get
 
-
 func buildRegisterNodeIndex(dev: SvdDevice): Table[SvdId, SvdRegisterTreeNode] =
   for per in dev.peripherals.values:
     for n in per.walkRegisters:
       assert n.id notin result
       result[n.id] = n
-
 
 proc deriveRegisterNodes(dev: var SvdDevice) =
   # DFS then reverse to ensure that deepest entities are derived first
@@ -113,18 +103,19 @@ proc deriveRegisterNodes(dev: var SvdDevice) =
       raise newException(NotImplementedError, "Chained derived not supported: " & $n.id)
     deriveRegisterTreeNode(n, base)
 
-
 proc derivePeripherals(dev: var SvdDevice) =
   for per in dev.peripherals.mvalues:
     if per.derivedFrom.isSome:
       let base = dev.peripherals[per.derivedFrom.get.toSvdId]
       if base.derivedFrom.isSome:
-        raise newException(NotImplementedError, "Chained derived not supported: " & $per.id)
+        raise newException(
+            NotImplementedError, "Chained derived not supported: " & $per.id
+          )
       derivePeripheral(per, base)
 
-
-proc deriveEnum(index: TableRef[string, seq[SvdFieldEnum]], parentId: SvdId,
-                derivedFrom: string): Option[SvdFieldEnum] =
+proc deriveEnum(
+    index: TableRef[string, seq[SvdFieldEnum]], parentId: SvdId, derivedFrom: string
+): Option[SvdFieldEnum] =
   var base: SvdFieldEnum = nil
   let
     derFromParts = derivedFrom.strip.split('.')
@@ -134,7 +125,7 @@ proc deriveEnum(index: TableRef[string, seq[SvdFieldEnum]], parentId: SvdId,
     let
       candIdParts = cand.id.split
       first = candIdParts.len - min(derFromParts.len, candIdParts.len)
-    if candIdParts[first .. candIdParts.high] == derFromParts:
+    if candIdParts[first..candIdParts.high] == derFromParts:
       if not base.isNil:
         warn fmt"""Ambiguous derivedFrom "{derivedFrom}" in enumeratedValues of field {$parentId}. Ignoring this enumeratedValues entry."""
         return none(SvdFieldEnum)
@@ -148,7 +139,6 @@ proc deriveEnum(index: TableRef[string, seq[SvdFieldEnum]], parentId: SvdId,
   resultObj[] = base[]
   resultObj.id = parentId / base.id.name
   result = some resultObj
-
 
 proc deriveEnums(dev: var SvdDevice) =
   var enumIndex = newTable[string, seq[SvdFieldEnum]]()
@@ -166,14 +156,10 @@ proc deriveEnums(dev: var SvdDevice) =
   for per in dev.peripherals.values:
     for reg in per.walkRegistersOnly:
       for field in reg.fields:
-        if field.enumValues.isSome and
-          field.enumValues.get.derivedFrom.isSome and
-          field.enumValues.get.derivedFrom.get.len > 0:
-
-            field.enumValues = deriveEnum(
-              enumIndex, field.id, field.enumValues.get.derivedFrom.get
-            )
-
+        if field.enumValues.isSome and field.enumValues.get.derivedFrom.isSome and
+            field.enumValues.get.derivedFrom.get.len > 0:
+          field.enumValues =
+            deriveEnum(enumIndex, field.id, field.enumValues.get.derivedFrom.get)
 
 proc deriveAll*(dev: var SvdDevice) =
   # Derive deepest entities first
@@ -181,13 +167,13 @@ proc deriveAll*(dev: var SvdDevice) =
   dev.deriveRegisterNodes
   dev.derivePeripherals
 
-
 proc expand(p: SvdPeripheral): seq[SvdPeripheral] =
   ## Expand dim list peripheral
-  if not p.isDimList: return @[p]
+  if not p.isDimList:
+    return @[p]
   let
     dIncr = p.dimGroup.dimIncrement.get
-    dimIndex = toSeq(0 ..< p.dimGroup.dim.get).mapIt($it)
+    dimIndex = toSeq(0..<p.dimGroup.dim.get).mapIt($it)
   for (idx, idxString) in dimIndex.pairs:
     var newElem = new SvdPeripheral
     newElem[] = p[]
@@ -201,13 +187,13 @@ proc expand(p: SvdPeripheral): seq[SvdPeripheral] =
       newElem.registers = some regs
     result.add newElem
 
-
 proc expand(field: SvdField): seq[SvdField] =
   ## Expand dim list Field element (bitfield)
-  if not field.isDimList: return @[field]
+  if not field.isDimList:
+    return @[field]
   let
     dIncr = field.dimGroup.dimIncrement.get
-    dimIndex = toSeq(0 ..< field.dimGroup.dim.get).mapIt($it)
+    dimIndex = toSeq(0..<field.dimGroup.dim.get).mapIt($it)
   for (idx, idxString) in dimIndex.pairs:
     var newElem = new SvdField
     newElem[] = field[]
@@ -217,7 +203,6 @@ proc expand(field: SvdField): seq[SvdField] =
     newElem.msb.inc (dIncr * idx)
     result.add newElem
 
-
 proc expandAllFields(p: var SvdPeripheral) =
   for reg in p.walkRegistersOnly:
     var newFields: seq[SvdField]
@@ -225,16 +210,16 @@ proc expandAllFields(p: var SvdPeripheral) =
       newFields.add field.expand
     reg.fields = newFields
 
-
 func expand(e: SvdRegisterTreeNode): seq[SvdRegisterTreeNode] =
   ## Expand dim list node (cluster/register)
-  if not e.isDimList: return @[e]
+  if not e.isDimList:
+    return @[e]
 
   if e.dimGroup.dimIncrement.isNone:
     raise newException(SVDError, e.name & " has dim but no dimIncrement")
   let dIncr = e.dimGroup.dimIncrement.get
 
-  let dimIndex = toSeq(0 ..< e.dimGroup.dim.get).mapIt($it)
+  let dimIndex = toSeq(0..<e.dimGroup.dim.get).mapIt($it)
   for (idx, idxString) in dimIndex.pairs:
     var newElem = new SvdRegisterTreeNode
     newElem[] = e[]
@@ -248,10 +233,10 @@ func expand(e: SvdRegisterTreeNode): seq[SvdRegisterTreeNode] =
       newElem.registers = some regs
     result.add newElem
 
-
 proc expandChildren(e: var SvdRegisterTreeNode) =
   ## Recursively expand children of node
-  if e.kind != rnkCluster or e.registers.isNone: return
+  if e.kind != rnkCluster or e.registers.isNone:
+    return
 
   var expChildren: seq[SvdRegisterTreeNode]
   for child in e.iterRegisters:
@@ -260,7 +245,6 @@ proc expandChildren(e: var SvdRegisterTreeNode) =
       expChild.expandChildren
       expChildren.add expChild
   e.registers = some expChildren
-
 
 proc expandAll(periph: SvdPeripheral): seq[SvdPeripheral] =
   ## Expand peripheral and all child dim lists
@@ -279,7 +263,6 @@ proc expandAll(periph: SvdPeripheral): seq[SvdPeripheral] =
         expChildren.add expChild
     expPeriph.registers = some expChildren
 
-
 proc expandAll*(dev: var SvdDevice) =
   var expandedPeriphs: OrderedTable[SvdId, SvdPeripheral]
   for p in dev.peripherals.mvalues:
@@ -288,9 +271,9 @@ proc expandAll*(dev: var SvdDevice) =
       expandedPeriphs[expPeriph.id] = expPeriph
   dev.peripherals = expandedPeriphs
 
-
-proc resolveRegProperties(dev: SvdDevice, reg: SvdRegisterTreeNode):
-                          ResolvedRegProperties =
+proc resolveRegProperties(
+    dev: SvdDevice, reg: SvdRegisterTreeNode
+): ResolvedRegProperties =
   let periph = dev.peripherals[reg.id.parentPeripheral]
   var
     idStack: seq[SvdId]

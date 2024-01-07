@@ -11,16 +11,19 @@ iterator findAllDirect(n: XmlNode, tag: string): XmlNode =
     if cld.tag == tag:
       yield cld
 
-type Writer = object
-  indentLevel: Natural
+type
+  Writer = object
+    indentLevel: Natural
 
 proc writeLine(w: Writer, line: string) =
-  for i in 0 ..< w.indentLevel:
+  for i in 0..<w.indentLevel:
     stdout.write("  ")
   stdout.write(line)
   stdout.write("\n")
 
-proc indent(w: var Writer) = w.indentLevel.inc
+proc indent(w: var Writer) =
+  w.indentLevel.inc
+
 proc dedent(w: var Writer) =
   if w.indentLevel > 0:
     w.indentLevel.dec
@@ -60,9 +63,10 @@ proc main() =
     xmlRoot = loadXml(fname)
     peripherals = xmlRoot.child("peripherals")
 
-  var writer = Writer(indentLevel:0)
+  var writer = Writer(indentLevel: 0)
 
   for periph in peripherals.findAllDirect("peripheral"):
     periph.dumpPeripheral(writer)
 
-when isMainModule: main()
+when isMainModule:
+  main()

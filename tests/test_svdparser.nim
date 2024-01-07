@@ -22,7 +22,8 @@ suite "Parser Tests":
       adc0 = device.peripherals["ADC0".toSvdId]
 
     check:
-      timer0.description.get() == "32 Timer / Counter, counting up or down from different sources"
+      timer0.description.get() ==
+        "32 Timer / Counter, counting up or down from different sources"
       timer0.baseAddress == 0x40010000
       timer0.derivedFrom.isNone
       timer0.prependToName.isNone

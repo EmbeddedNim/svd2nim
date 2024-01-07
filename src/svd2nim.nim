@@ -37,17 +37,15 @@ proc processSvd*(path: string): SvdDevice =
   result.expandAll
   result.resolveAllProperties
 
-
 ###############################################################################
 # Main
 ###############################################################################
 
-
 proc getNimbleVersion(): string {.compileTime.} =
   let dump = staticExec "nimble dump .."
   for ln in dump.splitLines:
-    if scanf(ln, "version: \"$*\"", result): return
-
+    if scanf(ln, "version: \"$*\"", result):
+      return
 
 proc getVersion(): string {.compileTime.} =
   let
@@ -62,9 +60,10 @@ proc getVersion(): string {.compileTime.} =
     else:
       baseVersion
 
-
 proc main() =
-  let help = """
+  let
+    help =
+      """
   svd2nim - Generate Nim peripheral register APIs for ARM using CMSIS-SVD files.
 
   Usage:
@@ -79,29 +78,33 @@ proc main() =
     --ignore-prepend    Ignore peripheral <prependToName>
     --ignore-append     Ignore peripheral <appendToName>
   """
-  let args = docopt(help, version=getVersion())
+  let args = docopt(help, version = getVersion())
   # for (k, v) in args.pairs: echo fmt"{k}: {v}" # Dump args for debugging
   # Get Parameters
   if args.contains("<SvdFile>"):
     let
       dev = processSvd($args["<SvdFile>"])
-      outDirName = if args["-o"]: $args["-o"] else: getCurrentDir()
+      outDirName =
+        if args["-o"]:
+          $args["-o"]
+        else:
+          getCurrentDir()
 
     if not dirExists(outDirName):
       stderr.writeLine "ERROR: Output directory does not exist."
       quit(1)
 
-    let cgopts = CodeGenOptions(
-      ignoreAppend: args["--ignore-append"],
-      ignorePrepend: args["--ignore-prepend"],
-    )
+    let
+      cgopts =
+        CodeGenOptions(
+          ignoreAppend: args["--ignore-append"], ignorePrepend: args["--ignore-prepend"]
+        )
 
     setOptions cgopts
     renderDevice(dev, outDirName)
   else:
     stderr.writeLine "Try: svd2nim -h"
     quit(1)
-
 
 when isMainModule:
   main()

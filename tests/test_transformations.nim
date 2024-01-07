@@ -20,9 +20,9 @@ proc readAndTransformSvd(fname: string, derive, expand: bool = false): SvdDevice
 suite "SVD transformation tests":
   setup:
     let
-      device {.used.} = readAndTransformSvd("./tests/ARM_Example.svd", derive=true)
-      samd21 {.used.} = readAndTransformSvd("./tests/ATSAMD21G18A.svd", derive=true)
-      esp32 {.used.} = readAndTransformSvd("./tests/esp32.svd", derive=true)
+      device {.used.} = readAndTransformSvd("./tests/ARM_Example.svd", derive = true)
+      samd21 {.used.} = readAndTransformSvd("./tests/ATSAMD21G18A.svd", derive = true)
+      esp32 {.used.} = readAndTransformSvd("./tests/esp32.svd", derive = true)
 
   test "Peripheral derived":
     let
@@ -67,7 +67,6 @@ suite "SVD transformation tests":
       wdtstg2.enumValues.isSome
       wdtstg2.enumValues.get.name.get == "WDT_STG3"
       wdtstg2.enumValues.get.values.len == 4
-
 
 suite "Dim Lists":
   setup:

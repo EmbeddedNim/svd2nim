@@ -6,7 +6,6 @@ func findRegister*(n: SvdRegisterParent, name: string): SvdRegisterTreeNode =
     if c.name == name:
       return c
 
-
 func findRegister*(p: SvdPeripheral, id: SvdId): SvdRegisterTreeNode =
   let idParts = id.split()
   var
@@ -21,11 +20,9 @@ func findRegister*(p: SvdPeripheral, id: SvdId): SvdRegisterTreeNode =
 
   result = curNode
 
-
 func findRegister*(dev: SvdDevice, id: SvdId): SvdRegisterTreeNode =
   let periph = dev.peripherals[id.split()[0].toSvdId]
   result = periph.findRegister(id)
-
 
 func findField*(n: SvdRegisterTreeNode, name: string): SvdField =
   assert n.kind == rnkRegister
@@ -33,10 +30,8 @@ func findField*(n: SvdRegisterTreeNode, name: string): SvdField =
     if c.name == name:
       return c
 
-
 func findField*(p: SvdPeripheral, id: SvdId): SvdField =
   result = p.findRegister(id.parent).findField(id.name)
-
 
 func findField*(dev: SvdDevice, id: SvdId): SvdField =
   result = dev.findRegister(id.parent).findField(id.name)

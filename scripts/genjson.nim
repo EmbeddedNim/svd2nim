@@ -1,6 +1,8 @@
 import strutils
 
-let fields = """
+let
+  fields =
+    """
     name*: string
     groupName*: string
     typeName*: string
@@ -22,6 +24,6 @@ for line in fields.strip.splitLines:
 
   var name = parts[0].strip
   if name.endsWith("*"):
-    name = name[0..(name.high-1)]
+    name = name[0..(name.high - 1)]
 
   echo "\"" & name & "\"" & ": " & arg & "." & name & ","

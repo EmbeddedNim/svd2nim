@@ -43,10 +43,11 @@ suite "SAMD21 typedefs":
 
       # Test with a cluster
       samd21Types["TC3_Type"].members.len == 3
-      samd21Types["TC3_Type"].members.mapIt(it.name) == @["COUNT8", "COUNT16", "COUNT32"]
-      samd21Types["TC3_Type"].members.mapIt(it.typeName) == @[
-        "TcCount8_Type", "TcCount16_Type", "TcCount32_Type"
+      samd21Types["TC3_Type"].members.mapIt(it.name) == @[
+        "COUNT8", "COUNT16", "COUNT32"
       ]
+      samd21Types["TC3_Type"].members.mapIt(it.typeName) ==
+        @["TcCount8_Type", "TcCount16_Type", "TcCount32_Type"]
       samd21Types["TcCount8_Type"].members.len == 15
       samd21Types["TcCount8_COUNT_Type"].members.len == 1
       samd21Types["TcCount8_COUNT_Type"].members[0].name == "loc"
@@ -65,7 +66,8 @@ suite "SAMD21 typedefs":
   test "Create field enums":
     let
       symbols = initHashSet[string]()
-      samd21enums = createFieldEnums(samd21.peripherals["GCLK".toSvdId], samd21TypeMap, symbols)
+      samd21enums =
+        createFieldEnums(samd21.peripherals["GCLK".toSvdId], samd21TypeMap, symbols)
       idEnum = samd21enums["GCLK_CLKCTRL_ID"]
       genEnum = samd21enums["GCLK_CLKCTRL_GEN"]
 

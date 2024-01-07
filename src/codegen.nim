@@ -255,6 +255,28 @@ proc createTypeDefs(dev: SvdDevice, names: Table[SvdId, string]):
       result.add td
 
 
+proc renderNimImportExports(dev: SvdDevice, outf: File) =
+  outf.write("# Peripheral access API for $# microcontrollers (generated using svd2nim)\n\n" % dev.metadata.name.toUpper())
+  outf.writeLine("import std/volatile")
+  outf.writeLine("import std/bitops")
+  outf.writeLine("import uncheckedenums")
+  outf.write("\n")
+  outf.writeLine("export volatile")
+  outf.writeLine("export uncheckedenums")
+  outf.write("\n")
+
+  # Supress name hints
+  outf.write("{.hint[name]: off.}\n\n")
+
+  # Enable overloadable enums for nim v1.x
+  outf.write:
+    """
+    when NimMajor < 2:
+      {.experimental: "overloadableEnums".}
+    """.dedent.strip
+  outf.write "\n\n"
+
+
 proc renderType(typ: CodeGenTypeDef, tg: File) =
   let
     star = if typ.public: "*" else: ""
@@ -806,7 +828,7 @@ proc renderDeviceConsts(dev: SvdDevice, codegenSymbols: var HashSet[string], out
 
     for (k, v) in cpuConsts:
       outf.writeLine fmt"const {k}* = {v}"
-      codeGenSymbols.incl k
+      codegenSymbols.incl k
 
 proc renderCoreModule(dev: SvdDevice, devFileName: string) =
   const coreBindings = {
@@ -843,58 +865,25 @@ proc renderUncheckedenums(outFileName: string) =
   writeFile(joinPath(outFileName.parentDir, modname), contents)
 
 
-proc renderDevice*(dev: SvdDevice, dirpath: string) =
-  let
-    outFileName = dirPath / dev.metadata.name.toLower() & ".nim"
-    outf = open(outFileName, fmWrite)
-
-  outf.write("# Peripheral access API for $# microcontrollers (generated using svd2nim)\n\n" % dev.metadata.name.toUpper())
-  outf.writeLine("import std/volatile")
-  outf.writeLine("import std/bitops")
-  outf.writeLine("import uncheckedenums")
-  outf.write("\n")
-  outf.writeLine("export volatile")
-  outf.writeLine("export uncheckedenums")
-  outf.write("\n")
-
-  # Supress name hints
-  outf.write("{.hint[name]: off.}\n\n")
-
-  # Enable overloadable enums for nim v1.x
-  outf.write:
-    """
-    when NimMajor < 2:
-      {.experimental: "overloadableEnums".}
-    """.dedent.strip
-  outf.write "\n\n"
-
-  var codeGenSymbols: HashSet[string]
-
-  renderDeviceConsts(dev, codeGenSymbols, outf)
-  renderInterrupts(dev, outf)
-  renderCoreModule(dev, outFileName)
-  renderUncheckedenums(outFileName)
-
+proc renderPeripheralRegTypeDefs(dev: SvdDevice, codegenSymbols: var HashSet[string], typeMap: Table[SvdId, string], outf: File) =
   renderHeader("# Type definitions for peripheral registers", outf)
-
-  let
-    typeMap = dev.buildTypeMap
-    typeDefs = dev.createTypeDefs(typeMap)
-
-
+  let typeDefs = dev.createTypeDefs(typeMap)
   for t in typeDefs:
     codegenSymbols.incl t.name
     t.renderType(outf)
     outf.writeLine("")
 
+
+proc renderPeripheralInstances(dev: SvdDevice, codegenSymbols: var HashSet[string], typeMap: Table[SvdId, string], outf: File) =
   renderHeader("# Peripheral object instances", outf)
   for periph in dev.peripherals.values:
     let constName = renderPeripheral(periph, typeMap, dev, outf)
     codegenSymbols.incl constName
 
-  renderHeader("# Accessors for peripheral registers", outf)
 
-  # Use sets to deduplicate generated code types and procs
+proc renderPeripheralRegAccessors(dev: SvdDevice, codegenSymbols: var HashSet[string], typeMap: Table[SvdId, string], outf: File) =
+  ## Use sets to deduplicate generated code types and procs
+  renderHeader("# Accessors for peripheral registers", outf)
   var
     fieldDistinctDefs: HashSet[string]
     enumDefs: HashSet[string]
@@ -910,14 +899,14 @@ proc renderDevice*(dev: SvdDevice, dirpath: string) =
       typedefs.add def
     renderDistinctTypes(typedefs, outf)
 
-    for (name, en) in createFieldEnums(p, typeMap, codeGenSymbols).pairs:
+    for (name, en) in createFieldEnums(p, typeMap, codegenSymbols).pairs:
       if name in enumDefs:
         continue
       enumDefs.incl name
       codegenSymbols.incl en.name
       renderEnum(en, outf)
 
-    for (name, acc) in createAccessors(p, typeMap, codeGenSymbols).pairs:
+    for (name, acc) in createAccessors(p, typeMap, codegenSymbols).pairs:
       if name in accDefs:
         continue
       accDefs.incl name
@@ -928,5 +917,26 @@ proc renderDevice*(dev: SvdDevice, dirpath: string) =
         continue
       accDefs.incl name
       renderProcDef(bfacc, outf)
+
+
+proc renderDevice*(dev: SvdDevice, dirpath: string) =
+  let
+    outFileName = dirPath / dev.metadata.name.toLower() & ".nim"
+    outf = open(outFileName, fmWrite)
+
+  renderNimImportExports(dev, outf)
+
+  var codegenSymbols: HashSet[string]
+
+  renderDeviceConsts(dev, codegenSymbols, outf)
+  renderInterrupts(dev, outf)
+  renderCoreModule(dev, outFileName)
+  renderUncheckedenums(outFileName)
+
+  let typeMap = dev.buildTypeMap
+
+  renderPeripheralRegTypeDefs(dev, codegenSymbols, typemap, outf)
+  renderPeripheralInstances(dev, codegenSymbols, typemap, outf)
+  renderPeripheralRegAccessors(dev, codegenSymbols, typemap, outf)
 
   outf.close()

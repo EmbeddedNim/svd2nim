@@ -104,9 +104,6 @@ func parseFieldEnum(eNode: XmlNode, parentId: SvdId): SvdFieldEnum =
   result.headerEnumName = eNode.getChildTextOpt("headerEnumName")
 
   let usage = eNode.child("usage")
-  if not isNil(usage) and usage.innerText != "read-write":
-    raise newException(NotImplementedError, "Separate read/write enums not implemented")
-
   result.id =
     if isSome(result.name) and result.name.get.len > 0:
       parentId / result.name.get
@@ -162,7 +159,7 @@ func parseAccess(node: XmlNode): Option[SvdRegisterAccess] =
           raise newException(SVDError, "Unknown access value: " & access.get)
       )
 
-func parseField(fNode: XmlNode, parentId: SvdId): SvdField =
+proc parseField(fNode: XmlNode, parentId: SvdId): SvdField =
   assert fNode.tag == "field"
   new result
   result.name = fNode.getChildTextExc("name")
@@ -204,11 +201,13 @@ func parseField(fNode: XmlNode, parentId: SvdId): SvdField =
         SVDError, fmt"Invalid bit range specification in field '{result.name}'"
       )
 
-  let enumVals = fNode.child("enumeratedValues")
-  if not isNil(enumVals):
-    result.enumValues = some enumVals.parseFieldEnum(result.id)
+  let enumValuesNodes = fNode.findAll("enumeratedValues")
+  if enumValuesNodes.len > 0:
+    result.enumValues = some parseFieldEnum(enumValuesNodes[0], result.id)
   else:
-    result.enumValues = none(SvdFieldEnum)
+    result.enumValues = none SvdFieldEnum
+  if enumValuesNodes.len > 1:
+    warn fmt"Multiple enumeratedValues in field '{result.name}', only the first entry will be used"
 
   result.dimGroup = fNode.parseDimElementGroup()
 
@@ -218,9 +217,9 @@ func parseProperties(node: XmlNode): SvdRegisterProperties =
   result.resetValue = node.getChildIntOpt("resetValue")
 
 # Forward declaration for mutually recursive procs
-func parseRegisterTreeNode(xml: XmlNode, parent: SvdId): SvdRegisterTreeNode
+proc parseRegisterTreeNode(xml: XmlNode, parent: SvdId): SvdRegisterTreeNode
 
-func parseChildRegisters(xml: XmlNode, parent: SvdId): Option[seq[SvdRegisterTreeNode]] =
+proc parseChildRegisters(xml: XmlNode, parent: SvdId): Option[seq[SvdRegisterTreeNode]] =
   var regNodes: seq[SvdRegisterTreeNode]
   for xmlChild in xml:
     if xmlChild.kind == xnElement and xmlChild.tag in ["register", "cluster"]:
@@ -228,7 +227,7 @@ func parseChildRegisters(xml: XmlNode, parent: SvdId): Option[seq[SvdRegisterTre
   if regNodes.len > 0:
     result = some regNodes
 
-func parseRegisterTreeNode(xml: XmlNode, parent: SvdId): SvdRegisterTreeNode =
+proc parseRegisterTreeNode(xml: XmlNode, parent: SvdId): SvdRegisterTreeNode =
   case xml.tag
   of "register":
     result = SvdRegisterTreeNode(kind: rnkRegister)
@@ -256,7 +255,7 @@ func parseRegisterTreeNode(xml: XmlNode, parent: SvdId): SvdRegisterTreeNode =
     result.headerStructName = xml.getChildTextOpt("headerStructName")
     result.registers = xml.parseChildRegisters(result.id)
 
-func parsePeripheral(pNode: XmlNode): SvdPeripheral =
+proc parsePeripheral(pNode: XmlNode): SvdPeripheral =
   assert pNode.tag == "peripheral"
 
   new result

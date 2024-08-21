@@ -552,18 +552,28 @@ func createAccessors(
       valType = getRegValueType(reg, regTypeName)
 
     if props.access.isReadable:
-      var
-        reader =
-          CodeGenProcDef(
-            keyword: "proc",
-            name: "read",
-            public: true,
-            args: @[("reg", regTypeName)],
-            retType: valType,
-            pragma: @["inline"],
-          )
-      reader.body = fmt"volatileLoad(cast[ptr {valType}](reg.loc))"
-      result[fmt"read[{regTypeName}]"] = reader
+      # Create regular read accessor
+      result[fmt"read[{regTypeName}]"] = CodeGenProcDef(
+        keyword: "proc",
+        name: "read",
+        public: true,
+        args: @[("reg", regTypeName)],
+        retType: valType,
+        pragma: @["inline"],
+        body: fmt"volatileLoad(cast[ptr {valType}](reg.loc))"
+      )
+
+      # Create static read accessor, generates more efficient code when possible
+      # See https://github.com/dwhall/nimbed/wiki/svd2nim-analysis#item-3-static-register-parameters
+      result[fmt"read[static {regTypeName}]"] = CodeGenProcDef(
+        keyword: "proc",
+        name: "read",
+        public: true,
+        args: @[("reg", fmt"static {regTypeName}")],
+        retType: valType,
+        pragma: @["inline"],
+        body: fmt"volatileLoad(cast[ptr {valType}](reg.loc))"
+      )
 
     if props.access.isWritable:
       var

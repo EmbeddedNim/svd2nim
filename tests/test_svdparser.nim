@@ -178,3 +178,17 @@ suite "Parser Tests":
 
       pmux1.dimGroup.dim.get == 16
       pmux1.dimGroup.dimIncrement.get == 0x1
+
+  test "Parse stm32f429.svd with read/write enums":
+    # Should not raise exception
+    let f429 = readSVD "./tests/stm32f429.svd"
+
+    # This field defines two separate enums with read/write usages
+    let ewif = f429.findField "WWDG.SR.EWIF"
+
+    # Check that we parse and use the first enum defined
+    # Support for separate enum values not yet implemented
+    check:
+      isSome ewif.enumValues
+      ewif.enumValues.get.values[0].name == "Pending"
+      ewif.enumValues.get.values[0].val == 1

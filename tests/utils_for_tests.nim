@@ -35,3 +35,6 @@ func findField*(p: SvdPeripheral, id: SvdId): SvdField =
 
 func findField*(dev: SvdDevice, id: SvdId): SvdField =
   result = dev.findRegister(id.parent).findField(id.name)
+
+func findField*(dev: SvdDevice, id: string): SvdField =
+  dev.findField(id.toSvdId)

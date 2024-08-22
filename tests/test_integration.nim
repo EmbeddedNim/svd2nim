@@ -20,7 +20,7 @@ const
 
   buildDir = projectDir / "build"
 
-  allSvdFiles = ["ATSAMD21G18A.svd", "STM32F103.svd", "esp32.svd"]
+  allSvdFiles = ["ATSAMD21G18A.svd", "STM32F103.svd", "esp32.svd", "stm32f429.svd"]
 
 when defined windows:
   const svd2nimExec = buildDir / "svd2nim.exe"

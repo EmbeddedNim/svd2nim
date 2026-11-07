@@ -190,12 +190,12 @@ proc parseField(fNode: XmlNode, parentId: SvdId): SvdField =
   elif childTags.contains("bitRange"):
     # bitRangePattern
     let
-      pat = re"\[([[:alnum:]]+):([[:alnum:]]+)\]"
+      pat = re2"\[([[:alnum:]]+):([[:alnum:]]+)\]"
       text = fNode.child("bitRange").innerText
-    var m: RegexMatch
+    var m: RegexMatch2
     doAssert text.match(pat, m)
-    result.msb = m.group(0, text)[0].parseHexOrDecInt
-    result.lsb = m.group(1, text)[0].parseHexOrDecInt
+    result.msb = text[m.group(0)].parseHexOrDecInt
+    result.lsb = text[m.group(1)].parseHexOrDecInt
   else:
     raise newException(
         SVDError, fmt"Invalid bit range specification in field '{result.name}'"

@@ -835,12 +835,13 @@ proc renderInterrupts(dev: SvdDevice, outf: File) =
 func convertCpuRevision(text: string): uint =
   # Based on:
   # https://github.com/Open-CMSIS-Pack/devtools/blob/259aa1f6755bd96497acdf403a008a4ba4cb2d66/tools/svdconv/SVDModel/src/SvdUtils.cpp#L246
-  let pat = re"r(\d+)p(\d+)"
-  var m: RegexMatch
-  doAssert text.toLowerAscii.match(pat, m)
+  let pat = re2"r(\d+)p(\d+)"
+  let revText = text.toLowerAscii
+  var m: RegexMatch2
+  doAssert revText.match(pat, m)
   let
-    major = m.group(0, text)[0].parseUInt
-    minor = m.group(1, text)[0].parseUInt
+    major = revText[m.group(0)].parseUInt
+    minor = revText[m.group(1)].parseUInt
   result = (major shl 8) or (minor)
 
 func quoted(s: string): string =
@@ -851,7 +852,7 @@ proc renderDeviceConsts(dev: SvdDevice, codegenSymbols: var HashSet[string], out
     outf.write("# Some information about this device.\n")
 
     let
-      cpuNameSan = dev.cpu.name.replace(re"(M\d+)\+", "$1PLUS").sanitizeIdent
+      cpuNameSan = dev.cpu.name.replace(re2"(M\d+)\+", "$1PLUS").sanitizeIdent
       cpuConsts = {
         "DEVICE": quoted(dev.metadata.name),
         fmt"{cpuNameSan}_REV": fmt"{convertCpuRevision(dev.cpu.revision):#06x}",

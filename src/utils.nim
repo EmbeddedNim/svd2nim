@@ -38,9 +38,9 @@ func sanitizeIdent*(ident: string): string =
   # Underscores
   const
     reptab = [
-      (re"_(_)+", "_"), # Subsequent underscores
-      (re"_$", ""), # Trailing underscore
-      (re"^_", "") # Leading underscore
+      (re2"_(_)+", "_"), # Subsequent underscores
+      (re2"_$", ""), # Trailing underscore
+      (re2"^_", "") # Leading underscore
     ]
   for (reg, repl) in reptab:
     result = result.replace(reg, repl)
@@ -57,7 +57,7 @@ func stripPlaceHolder*(s: string): string =
   # Strip %s and [%s] placeholders associated with dimElementGroup
   # elements from strings.
   # https://arm-software.github.io/CMSIS_5/SVD/html/elem_special.html#dimElementGroup_gr
-  const pat = re"(%s|_%s$|_?\[%s\]$)"
+  const pat = re2"(%s|_%s$|_?\[%s\]$)"
   s.replace(pat, "")
 
 iterator ritems*[T](s: openArray[T]): T =

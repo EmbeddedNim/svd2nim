@@ -28,13 +28,13 @@ else:
   const svd2nimExec = buildDir / "svd2nim"
 
 proc parseAddrsFile(fname: static[string]): Table[string, int] =
-  var mt: RegexMatch
+  var mt: RegexMatch2
   for line in staticRead(fname).strip.splitLines:
-    if not line.match(re"([._0-9A-Za-z]+):(0[xX][0-9A-Fa-f]+)", mt):
+    if not line.match(re2"([._0-9A-Za-z]+):(0[xX][0-9A-Fa-f]+)", mt):
       continue
     let
-      regname = mt.group(0, line)[0]
-      regAddr = mt.group(1, line)[0].parseHexInt
+      regname = line[mt.group(0)]
+      regAddr = line[mt.group(1)].parseHexInt
     doAssert regName notin result
     result[regName] = regAddr
 

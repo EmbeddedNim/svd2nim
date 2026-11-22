@@ -14,6 +14,10 @@ import ./basetypes
 import ./utils
 import ./cpuirq
 
+func nimIdentKey*(s: string): string =
+  ## Normalize an identifier for Nim's case/underscore-insensitive equality.
+  s.toLowerAscii.replace("_", "")
+
 const
   Indent = "  "
   TypeSuffix = "_Type"
@@ -316,7 +320,7 @@ func createEnum(
     let cgKey = k.sanitizeIdent
     result.fields.add (cgKey, v)
 
-    if cgKey[0] notin Letters or cgKey in codegenSymbols:
+    if cgKey[0] notin Letters or nimIdentKey(cgKey) in codegenSymbols:
       needsPrefix = true
 
   if needsPrefix:
@@ -430,9 +434,9 @@ func createBitfieldAccessors(
             # Proc name may conflict with, eg, const instances.
             # In this case, attempt to generate a unique proc name by appending
             # "Field" suffix.
-            if n in codegenSymbols:
+            if nimIdentKey(n) in codegenSymbols:
               n = n & "Field"
-              assert n notin codegenSymbols
+              assert nimIdentKey(n) notin codegenSymbols
             n
 
       if access.isReadable:
@@ -865,7 +869,7 @@ proc renderDeviceConsts(dev: SvdDevice, codegenSymbols: var HashSet[string], out
 
     for (k, v) in cpuConsts:
       outf.writeLine fmt"const {k}* = {v}"
-      codegenSymbols.incl k
+      codegenSymbols.incl nimIdentKey(k)
 
 proc renderCoreModule(dev: SvdDevice, devFileName: string) =
   const
@@ -908,7 +912,7 @@ proc renderPeripheralRegTypeDefs(
   renderHeader("# Type definitions for peripheral registers", outf)
   let typeDefs = dev.createTypeDefs(typeMap)
   for t in typeDefs:
-    codegenSymbols.incl t.name
+    codegenSymbols.incl nimIdentKey(t.name)
     t.renderType(outf)
     outf.writeLine("")
 
@@ -921,7 +925,7 @@ proc renderPeripheralInstances(
   renderHeader("# Peripheral object instances", outf)
   for periph in dev.peripherals.values:
     let constName = renderPeripheral(periph, typeMap, dev, outf)
-    codegenSymbols.incl constName
+    codegenSymbols.incl nimIdentKey(constName)
 
 proc renderPeripheralRegAccessors(
     dev: SvdDevice,
@@ -942,7 +946,7 @@ proc renderPeripheralRegAccessors(
       if name in fieldDistinctDefs:
         continue
       fieldDistinctDefs.incl name
-      codegenSymbols.incl name
+      codegenSymbols.incl nimIdentKey(name)
       typedefs.add def
     renderDistinctTypes(typedefs, outf)
 
@@ -950,7 +954,7 @@ proc renderPeripheralRegAccessors(
       if name in enumDefs:
         continue
       enumDefs.incl name
-      codegenSymbols.incl en.name
+      codegenSymbols.incl nimIdentKey(en.name)
       renderEnum(en, outf)
 
     for (name, acc) in createAccessors(p, typeMap, codegenSymbols).pairs:

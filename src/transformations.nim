@@ -8,6 +8,46 @@ import std/strformat
 import ./basetypes
 import ./utils
 
+
+func parseDimIndices*(dim: Natural, dimIndex: Option[string]): seq[string] =
+  ## Resolve the list of instance indices for a dim element group.
+  ##
+  ## SVD allows a ``<dimIndex>`` tag to specify the indices used when
+  ## expanding a dim list (e.g. ``"1,2,3,4"`` or a range like ``"1-4"``,
+  ## or a mix such as ``"0,2-4"``). When the tag is missing or empty, the
+  ## default indices are ``0 .. dim-1``. The returned sequence has one entry
+  ## per instance and is used to build the concrete names (via ``%s``
+  ## substitution) of the expanded elements. Addresses are still derived from
+  ## the positional index (0 .. dim-1) times ``dimIncrement``.
+  if dimIndex.isNone or dimIndex.get.strip.len == 0:
+    # No explicit indices: fall back to the default 0-based sequence.
+    for i in 0..<dim:
+      result.add $i
+    return
+
+  for part in dimIndex.get.split(','):
+    let t = part.strip
+    if t.contains('-'):
+      # A range such as "1-4" expands to each integer in between.
+      let halves = t.split('-')
+      if halves.len == 2:
+        try:
+          let a = parseInt(halves[0].strip)
+          let b = parseInt(halves[1].strip)
+          for v in a..b:
+            result.add $v
+          continue
+        except ValueError:
+          # Not a numeric range; treat the whole token as a literal index.
+          discard
+    # A single (possibly non-numeric) index token.
+    result.add t
+
+  if result.len == 0:
+    # Defensive fallback if parsing produced nothing.
+    for i in 0..<dim:
+      result.add $i
+
 func copyEnum(en: SvdFieldEnum, newParent: SvdId): SvdFieldEnum =
   new result
   result[] = en[]
@@ -173,8 +213,8 @@ proc expand(p: SvdPeripheral): seq[SvdPeripheral] =
     return @[p]
   let
     dIncr = p.dimGroup.dimIncrement.get
-    dimIndex = toSeq(0..<p.dimGroup.dim.get).mapIt($it)
-  for (idx, idxString) in dimIndex.pairs:
+    dimIndices = parseDimIndices(p.dimGroup.dim.get, p.dimGroup.dimIndex)
+  for (idx, idxString) in dimIndices.pairs:
     var newElem = new SvdPeripheral
     newElem[] = p[]
     newElem.name = p.name.replace("%s", idxString)
@@ -193,8 +233,8 @@ proc expand(field: SvdField): seq[SvdField] =
     return @[field]
   let
     dIncr = field.dimGroup.dimIncrement.get
-    dimIndex = toSeq(0..<field.dimGroup.dim.get).mapIt($it)
-  for (idx, idxString) in dimIndex.pairs:
+    dimIndices = parseDimIndices(field.dimGroup.dim.get, field.dimGroup.dimIndex)
+  for (idx, idxString) in dimIndices.pairs:
     var newElem = new SvdField
     newElem[] = field[]
     newElem.name = field.name.replace("%s", idxString)
@@ -219,8 +259,8 @@ func expand(e: SvdRegisterTreeNode): seq[SvdRegisterTreeNode] =
     raise newException(SVDError, e.name & " has dim but no dimIncrement")
   let dIncr = e.dimGroup.dimIncrement.get
 
-  let dimIndex = toSeq(0..<e.dimGroup.dim.get).mapIt($it)
-  for (idx, idxString) in dimIndex.pairs:
+  let dimIndices = parseDimIndices(e.dimGroup.dim.get, e.dimGroup.dimIndex)
+  for (idx, idxString) in dimIndices.pairs:
     var newElem = new SvdRegisterTreeNode
     newElem[] = e[]
     newElem.name = e.name.replace("%s", idxString)

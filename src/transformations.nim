@@ -10,13 +10,25 @@ import ./utils
 
 
 func parseDimIndices*(dim: Natural, dimIndex: Option[string]): seq[string] =
+  ## Resolve the list of instance indices for a dim element group.
+  ##
+  ## SVD allows a ``<dimIndex>`` tag to specify the indices used when
+  ## expanding a dim list (e.g. ``"1,2,3,4"`` or a range like ``"1-4"``,
+  ## or a mix such as ``"0,2-4"``). When the tag is missing or empty, the
+  ## default indices are ``0 .. dim-1``. The returned sequence has one entry
+  ## per instance and is used to build the concrete names (via ``%s``
+  ## substitution) of the expanded elements. Addresses are still derived from
+  ## the positional index (0 .. dim-1) times ``dimIncrement``.
   if dimIndex.isNone or dimIndex.get.strip.len == 0:
+    # No explicit indices: fall back to the default 0-based sequence.
     for i in 0..<dim:
       result.add $i
     return
+
   for part in dimIndex.get.split(','):
     let t = part.strip
     if t.contains('-'):
+      # A range such as "1-4" expands to each integer in between.
       let halves = t.split('-')
       if halves.len == 2:
         try:
@@ -26,9 +38,13 @@ func parseDimIndices*(dim: Natural, dimIndex: Option[string]): seq[string] =
             result.add $v
           continue
         except ValueError:
+          # Not a numeric range; treat the whole token as a literal index.
           discard
+    # A single (possibly non-numeric) index token.
     result.add t
+
   if result.len == 0:
+    # Defensive fallback if parsing produced nothing.
     for i in 0..<dim:
       result.add $i
 

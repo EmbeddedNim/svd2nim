@@ -104,3 +104,23 @@ suite "Dim Lists":
       int_ena.findField("CH7_TX_END_INT_ENA").access.get == raReadWrite
       int_ena.findField("CH7_TX_END_INT_ENA").lsb == 21
       int_ena.findField("CH7_TX_END_INT_ENA").bitsize == 1
+
+
+suite "Dim index expansion":
+  setup:
+    let stm32f429 {.used.} = readAndTransformSvd("./tests/stm32f429.svd", true, true)
+
+  test "FMC registers use dimIndex for names":
+    let fmc = stm32f429.peripherals["FMC".toSvdId]
+    var names: seq[string]
+    for r in fmc.registers.get:
+      names.add r.name
+    check:
+      "BCR1" in names
+      "BCR2" in names
+      "BCR3" in names
+      "BCR4" in names
+      "BTR1" in names
+      "BTR2" in names
+      "BTR3" in names
+      "BTR4" in names

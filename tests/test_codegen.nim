@@ -6,6 +6,7 @@ import codegen {.all.}
 import svd2nim
 import utils
 import basetypes
+import transformations
 
 func toTable(s: seq[CodeGenTypeDef]): Table[string, CodeGenTypeDef] =
   for td in s:
@@ -106,3 +107,22 @@ suite "RP2040 enums":
 
     check:
       freqEnum.fields.mapIt(it.val) == @[4004, 4005, 4006, 4007]
+
+suite "Codegen dimIndex and symbol conflicts":
+  test "parseDimIndices resolves explicit and ranged indices":
+    check:
+      parseDimIndices(4, string.none) == @["0", "1", "2", "3"]
+      parseDimIndices(4, some("1,2,3,4")) == @["1", "2", "3", "4"]
+      parseDimIndices(4, some("1-4")) == @["1", "2", "3", "4"]
+      parseDimIndices(3, some("2,3,4")) == @["2", "3", "4"]
+
+  test "conflicting enum values are prefixed":
+    var symbols = initHashSet[string]()
+    symbols.incl nimIdentKey("FLASH")
+    var en = SvdFieldEnum(values: @[("Flash", 0), ("Other", 1)])
+    var field = new SvdField
+    field.name = "X"
+    field.enumValues = some en
+    let cg = createEnum(field, "T", symbols)
+    check:
+      cg.fields[0].key != "Flash"

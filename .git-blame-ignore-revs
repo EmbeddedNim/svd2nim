@@ -1,3 +1,8 @@
+# Configure git to use this file to ignore revisions for blame:
+# git config --global blame.ignoreRevsFile .git-blame-ignore-revs
+
 # Formatted with nph v0.3-0-gfa9c745
 74327760ad8c19f93c61b2a45812ed97f942c8e2
 
+# Formatted with nph v0.7.0
+323b7353bc8eb2f5c0daad787ecdcac9e378fe19

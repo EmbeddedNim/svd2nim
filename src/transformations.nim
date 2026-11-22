@@ -8,7 +8,6 @@ import std/strformat
 import ./basetypes
 import ./utils
 
-
 func parseDimIndices*(dim: Natural, dimIndex: Option[string]): seq[string] =
   ## Resolve the list of instance indices for a dim element group.
   ##
@@ -21,7 +20,7 @@ func parseDimIndices*(dim: Natural, dimIndex: Option[string]): seq[string] =
   ## the positional index (0 .. dim-1) times ``dimIncrement``.
   if dimIndex.isNone or dimIndex.get.strip.len == 0:
     # No explicit indices: fall back to the default 0-based sequence.
-    for i in 0..<dim:
+    for i in 0 ..< dim:
       result.add $i
     return
 
@@ -34,7 +33,7 @@ func parseDimIndices*(dim: Natural, dimIndex: Option[string]): seq[string] =
         try:
           let a = parseInt(halves[0].strip)
           let b = parseInt(halves[1].strip)
-          for v in a..b:
+          for v in a .. b:
             result.add $v
           continue
         except ValueError:
@@ -45,7 +44,7 @@ func parseDimIndices*(dim: Natural, dimIndex: Option[string]): seq[string] =
 
   if result.len == 0:
     # Defensive fallback if parsing produced nothing.
-    for i in 0..<dim:
+    for i in 0 ..< dim:
       result.add $i
 
 func copyEnum(en: SvdFieldEnum, newParent: SvdId): SvdFieldEnum =
@@ -148,9 +147,8 @@ proc derivePeripherals(dev: var SvdDevice) =
     if per.derivedFrom.isSome:
       let base = dev.peripherals[per.derivedFrom.get.toSvdId]
       if base.derivedFrom.isSome:
-        raise newException(
-            NotImplementedError, "Chained derived not supported: " & $per.id
-          )
+        raise
+          newException(NotImplementedError, "Chained derived not supported: " & $per.id)
       derivePeripheral(per, base)
 
 proc deriveEnum(
@@ -165,7 +163,7 @@ proc deriveEnum(
     let
       candIdParts = cand.id.split
       first = candIdParts.len - min(derFromParts.len, candIdParts.len)
-    if candIdParts[first..candIdParts.high] == derFromParts:
+    if candIdParts[first .. candIdParts.high] == derFromParts:
       if not base.isNil:
         warn fmt"""Ambiguous derivedFrom "{derivedFrom}" in enumeratedValues of field {$parentId}. Ignoring this enumeratedValues entry."""
         return none(SvdFieldEnum)

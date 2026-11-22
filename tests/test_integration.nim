@@ -60,11 +60,9 @@ macro genTestSvdFiles(): untyped =
       genAst(svdFile):
         test ("convert file " & svdFile):
           # Run svd2nim on SVD file
-          let
-            svd2nimExitcode =
-              execCmdEx(
-                join([svd2nimExec, testDir / svdFile, "-o", projectDir / "tmp"], " ")
-              )[1]
+          let svd2nimExitcode = execCmdEx(
+            join([svd2nimExec, testDir / svdFile, "-o", projectDir / "tmp"], " ")
+          )[1]
           assert svd2nimExitcode == 0
 
           # Run nim check on generated nim file

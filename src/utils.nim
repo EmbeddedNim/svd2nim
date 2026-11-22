@@ -1,9 +1,7 @@
 import std/strutils
 import regex
 
-const
-  nimKeywords: seq[string] =
-    """
+const nimKeywords: seq[string] = """
 addr and as asm
 bind block break
 case cast concept const continue converter
@@ -36,12 +34,11 @@ func sanitizeIdent*(ident: string): string =
       result &= chr
 
   # Underscores
-  const
-    reptab = [
-      (re2"_(_)+", "_"), # Subsequent underscores
-      (re2"_$", ""), # Trailing underscore
-      (re2"^_", "") # Leading underscore
-    ]
+  const reptab = [
+    (re2"_(_)+", "_"), # Subsequent underscores
+    (re2"_$", ""), # Trailing underscore
+    (re2"^_", ""), # Leading underscore
+  ]
   for (reg, repl) in reptab:
     result = result.replace(reg, repl)
 

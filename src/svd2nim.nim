@@ -61,9 +61,7 @@ proc getVersion(): string {.compileTime.} =
       baseVersion
 
 proc main() =
-  let
-    help =
-      """
+  let help = """
   svd2nim - Generate Nim peripheral register APIs for ARM using CMSIS-SVD files.
 
   Usage:
@@ -94,11 +92,9 @@ proc main() =
       stderr.writeLine "ERROR: Output directory does not exist."
       quit(1)
 
-    let
-      cgopts =
-        CodeGenOptions(
-          ignoreAppend: args["--ignore-append"], ignorePrepend: args["--ignore-prepend"]
-        )
+    let cgopts = CodeGenOptions(
+      ignoreAppend: args["--ignore-append"], ignorePrepend: args["--ignore-prepend"]
+    )
 
     setOptions cgopts
     renderDevice(dev, outDirName)

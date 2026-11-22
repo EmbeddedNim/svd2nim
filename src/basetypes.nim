@@ -6,49 +6,44 @@ import ./utils
 export options
 export tables
 
-type
-  SvdId* = object
-    parts: seq[string]
+type SvdId* = object
+  parts: seq[string]
 
 const RootId* = SvdId(parts: @[])
 
-type
-  SvdFieldEnum* = ref object
-    # https://arm-software.github.io/CMSIS_5/SVD/html/elem_registers.html#elem_enumeratedValues
-    id*: SvdId
-    name*: Option[string]
-    derivedFrom*: Option[string]
-    headerEnumName*: Option[string]
-    values*: seq[tuple[name: string, val: int]]
+type SvdFieldEnum* = ref object
+  # https://arm-software.github.io/CMSIS_5/SVD/html/elem_registers.html#elem_enumeratedValues
+  id*: SvdId
+  name*: Option[string]
+  derivedFrom*: Option[string]
+  headerEnumName*: Option[string]
+  values*: seq[tuple[name: string, val: int]]
 
-type
-  SvdDimElementGroup* = object
-    dim*: Option[Natural]
-    dimIncrement*: Option[Natural]
-    dimIndex*: Option[string]
-    # TODO: Implement support for dimArrayIndex
-    dimName*: Option[string]
+type SvdDimElementGroup* = object
+  dim*: Option[Natural]
+  dimIncrement*: Option[Natural]
+  dimIndex*: Option[string]
+  # TODO: Implement support for dimArrayIndex
+  dimName*: Option[string]
 
-type
-  SvdRegisterAccess* = enum
-    raReadOnly
-    raWriteOnly
-    raReadWrite
-    raWriteOnce
-    raReadWriteOnce
+type SvdRegisterAccess* = enum
+  raReadOnly
+  raWriteOnly
+  raReadWrite
+  raWriteOnce
+  raReadWriteOnce
 
-type
-  SvdField* = ref object
-    # https://arm-software.github.io/CMSIS_5/SVD/html/elem_registers.html#elem_field
-    id*: SvdId
-    name*: string
-    derivedFrom*: Option[string]
-    description*: Option[string]
-    lsb*: Natural
-    msb*: Natural
-    enumValues*: Option[SvdFieldEnum]
-    dimGroup*: SvdDimElementGroup
-    access*: Option[SvdRegisterAccess]
+type SvdField* = ref object
+  # https://arm-software.github.io/CMSIS_5/SVD/html/elem_registers.html#elem_field
+  id*: SvdId
+  name*: string
+  derivedFrom*: Option[string]
+  description*: Option[string]
+  lsb*: Natural
+  msb*: Natural
+  enumValues*: Option[SvdFieldEnum]
+  dimGroup*: SvdDimElementGroup
+  access*: Option[SvdRegisterAccess]
 
 type
   SvdRegisterProperties* = object
@@ -56,91 +51,84 @@ type
     size*: Option[Natural]
     access*: Option[SvdRegisterAccess]
     resetValue*: Option[int64]
+
   # Other fields not implemented for the moment
   # protection
   # resetMask
 
 ## Fully resolved register properties, based on inherited parent properties
-type
-  ResolvedRegProperties* = object
-    size*: Natural
-    access*: SvdRegisterAccess
-    resetValue*: int64
+type ResolvedRegProperties* = object
+  size*: Natural
+  access*: SvdRegisterAccess
+  resetValue*: int64
 
-type
-  SvdRegisterNodeKind* = enum
-    rnkCluster
-    rnkRegister
+type SvdRegisterNodeKind* = enum
+  rnkCluster
+  rnkRegister
 
 ## Represents either a Cluster or Register element, which may by
 ## nested arbitrarily deep.
-type
-  SvdRegisterTreeNode* = ref object
-    id*: SvdId
-    name*: string
-    baseName*: string
-    derivedFrom*: Option[string]
-    addressOffset*: Natural
-    description*: Option[string]
-    properties*: SvdRegisterProperties
-    dimGroup*: SvdDimElementGroup
-    typeBase*: Option[SvdId]
-    case kind*: SvdRegisterNodeKind
-    of rnkCluster:
-      headerStructName*: Option[string]
-      registers*: Option[seq[SvdRegisterTreeNode]]
-    of rnkRegister:
-      resolvedProperties*: ResolvedRegProperties
-      fields*: seq[SvdField]
-
-type
-  SvdInterrupt* = object
-    name*: string
-    description*: string
-    value*: int
-
-type
-  SvdPeripheral* = ref object
-    # https://arm-software.github.io/CMSIS_5/SVD/html/elem_peripherals.html#elem_peripheral
-    id*: SvdId
-    name*: string
-    baseName*: string
-    derivedFrom*: Option[string]
-    description*: Option[string]
-    baseAddress*: Natural
-    prependToName*: Option[string]
-    appendToName*: Option[string]
+type SvdRegisterTreeNode* = ref object
+  id*: SvdId
+  name*: string
+  baseName*: string
+  derivedFrom*: Option[string]
+  addressOffset*: Natural
+  description*: Option[string]
+  properties*: SvdRegisterProperties
+  dimGroup*: SvdDimElementGroup
+  typeBase*: Option[SvdId]
+  case kind*: SvdRegisterNodeKind
+  of rnkCluster:
     headerStructName*: Option[string]
-    properties*: SvdRegisterProperties
     registers*: Option[seq[SvdRegisterTreeNode]]
-    interrupts*: seq[SvdInterrupt]
-    dimGroup*: SvdDimElementGroup
-    typeBase*: Option[SvdId]
+  of rnkRegister:
+    resolvedProperties*: ResolvedRegProperties
+    fields*: seq[SvdField]
 
-type
-  SvdDeviceMetadata* = ref object
-    file*: string
-    name*: string
-    description*: string
-    licenseBlock*: Option[string]
+type SvdInterrupt* = object
+  name*: string
+  description*: string
+  value*: int
 
-type
-  SvdCpu* = ref object
-    name*: string
-    revision*: string
-    endian*: string
-    mpuPresent*: bool
-    fpuPresent*: bool
-    vtorPresent*: bool
-    nvicPrioBits*: int
-    vendorSystickConfig*: bool
+type SvdPeripheral* = ref object
+  # https://arm-software.github.io/CMSIS_5/SVD/html/elem_peripherals.html#elem_peripheral
+  id*: SvdId
+  name*: string
+  baseName*: string
+  derivedFrom*: Option[string]
+  description*: Option[string]
+  baseAddress*: Natural
+  prependToName*: Option[string]
+  appendToName*: Option[string]
+  headerStructName*: Option[string]
+  properties*: SvdRegisterProperties
+  registers*: Option[seq[SvdRegisterTreeNode]]
+  interrupts*: seq[SvdInterrupt]
+  dimGroup*: SvdDimElementGroup
+  typeBase*: Option[SvdId]
 
-type
-  SvdDevice* = ref object
-    metadata*: SvdDeviceMetadata
-    cpu*: SvdCpu
-    properties*: SvdRegisterProperties
-    peripherals*: OrderedTable[SvdId, SvdPeripheral]
+type SvdDeviceMetadata* = ref object
+  file*: string
+  name*: string
+  description*: string
+  licenseBlock*: Option[string]
+
+type SvdCpu* = ref object
+  name*: string
+  revision*: string
+  endian*: string
+  mpuPresent*: bool
+  fpuPresent*: bool
+  vtorPresent*: bool
+  nvicPrioBits*: int
+  vendorSystickConfig*: bool
+
+type SvdDevice* = ref object
+  metadata*: SvdDeviceMetadata
+  cpu*: SvdCpu
+  properties*: SvdRegisterProperties
+  peripherals*: OrderedTable[SvdId, SvdPeripheral]
 
 ## Any SVD entity that supports dimElementGroup
 type SomeSvdDimable* = SvdPeripheral | SvdRegisterTreeNode | SvdField

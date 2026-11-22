@@ -108,15 +108,14 @@ func parseFieldEnum(eNode: XmlNode, parentId: SvdId): SvdFieldEnum =
     if isSome(result.name) and result.name.get.len > 0:
       parentId / result.name.get
     else:
-      let
-        defaultName =
-          if usage.isNil:
-            "enum"
-          else:
-            case usage.innerText.toLower.strip
-            of "read": "readEnum"
-            of "write": "writeEnum"
-            else: "enum"
+      let defaultName =
+        if usage.isNil:
+          "enum"
+        else:
+          case usage.innerText.toLower.strip
+          of "read": "readEnum"
+          of "write": "writeEnum"
+          else: "enum"
       parentId / defaultName
 
   for enumValueNode in eNode.findAllDirect("enumeratedValue"):
@@ -141,22 +140,21 @@ func parseDimElementGroup(n: XmlNode): SvdDimElementGroup =
 func parseAccess(node: XmlNode): Option[SvdRegisterAccess] =
   let access = node.getChildTextOpt("access")
   if access.isSome:
-    result =
-      some(
-        case access.get
-        of "read-write":
-          raReadWrite
-        of "read-only":
-          raReadOnly
-        of "write-only":
-          raWriteOnly
-        of "writeOnce":
-          raWriteOnce
-        of "read-writeOnce":
-          raReadWriteOnce
-        else:
-          raise newException(SVDError, "Unknown access value: " & access.get)
-      )
+    result = some(
+      case access.get
+      of "read-write":
+        raReadWrite
+      of "read-only":
+        raReadOnly
+      of "write-only":
+        raWriteOnly
+      of "writeOnce":
+        raWriteOnce
+      of "read-writeOnce":
+        raReadWriteOnce
+      else:
+        raise newException(SVDError, "Unknown access value: " & access.get)
+    )
 
 proc parseField(fNode: XmlNode, parentId: SvdId): SvdField =
   assert fNode.tag == "field"
@@ -197,8 +195,8 @@ proc parseField(fNode: XmlNode, parentId: SvdId): SvdField =
     result.lsb = text[m.group(1)].parseHexOrDecInt
   else:
     raise newException(
-        SVDError, fmt"Invalid bit range specification in field '{result.name}'"
-      )
+      SVDError, fmt"Invalid bit range specification in field '{result.name}'"
+    )
 
   let enumValuesNodes = fNode.findAll("enumeratedValues")
   if enumValuesNodes.len > 0:
@@ -218,7 +216,9 @@ func parseProperties(node: XmlNode): SvdRegisterProperties =
 # Forward declaration for mutually recursive procs
 proc parseRegisterTreeNode(xml: XmlNode, parent: SvdId): SvdRegisterTreeNode
 
-proc parseChildRegisters(xml: XmlNode, parent: SvdId): Option[seq[SvdRegisterTreeNode]] =
+proc parseChildRegisters(
+    xml: XmlNode, parent: SvdId
+): Option[seq[SvdRegisterTreeNode]] =
   var regNodes: seq[SvdRegisterTreeNode]
   for xmlChild in xml:
     if xmlChild.kind == xnElement and xmlChild.tag in ["register", "cluster"]:
@@ -291,26 +291,24 @@ proc readSVD*(path: string): SvdDevice =
     deviceName = xml.getChildTextExc("name")
     deviceDescription = xml.getChildTextExc("description").strip()
 
-  result.metadata =
-    SvdDeviceMetadata(
-      file: path,
-      name: deviceName,
-      description: deviceDescription,
-      licenseBlock: xml.getChildTextOpt("licenseText"),
-    )
+  result.metadata = SvdDeviceMetadata(
+    file: path,
+    name: deviceName,
+    description: deviceDescription,
+    licenseBlock: xml.getChildTextOpt("licenseText"),
+  )
 
   let cpuNode = xml.getChildOrError("cpu")
-  result.cpu =
-    SvdCpu(
-      name: cpuNode.getChildTextExc("name"),
-      revision: cpuNode.getChildTextExc("revision"),
-      endian: cpuNode.getChildTextExc("endian"),
-      mpuPresent: cpuNode.getChildTextExc("mpuPresent").parseBool,
-      fpuPresent: cpuNode.getChildTextExc("fpuPresent").parseBool(),
-      nvicPrioBits: cpuNode.getChildTextExc("nvicPrioBits").parseHexOrDecInt.int,
-      vendorSystickConfig: cpuNode.getChildTextExc("vendorSystickConfig").parseBool,
-      vtorPresent: cpuNode.getChildBoolOrDefault("vtorPresent", true),
-    )
+  result.cpu = SvdCpu(
+    name: cpuNode.getChildTextExc("name"),
+    revision: cpuNode.getChildTextExc("revision"),
+    endian: cpuNode.getChildTextExc("endian"),
+    mpuPresent: cpuNode.getChildTextExc("mpuPresent").parseBool,
+    fpuPresent: cpuNode.getChildTextExc("fpuPresent").parseBool(),
+    nvicPrioBits: cpuNode.getChildTextExc("nvicPrioBits").parseHexOrDecInt.int,
+    vendorSystickConfig: cpuNode.getChildTextExc("vendorSystickConfig").parseBool,
+    vtorPresent: cpuNode.getChildBoolOrDefault("vtorPresent", true),
+  )
 
   result.properties = parseProperties(xml)
   for pNode in xml.getChildOrError("peripherals").findAllDirect("peripheral"):

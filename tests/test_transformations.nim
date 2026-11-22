@@ -105,7 +105,6 @@ suite "Dim Lists":
       int_ena.findField("CH7_TX_END_INT_ENA").lsb == 21
       int_ena.findField("CH7_TX_END_INT_ENA").bitsize == 1
 
-
 suite "Dim index expansion":
   setup:
     let stm32f429 {.used.} = readAndTransformSvd("./tests/stm32f429.svd", true, true)

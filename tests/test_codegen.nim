@@ -90,3 +90,19 @@ suite "Misc codegen tests":
       sanitizeIdent("Two__Underscores__") == "Two_Underscores"
       sanitizeIdent("ADDR") == "ADDRx" # is a keyword
       sanitizeIdent("_1INT_CLR") == "x1INT_CLR"
+
+suite "RP2040 enums":
+  setup:
+    let
+      rp2040 {.used.} = processSvd("./tests/RP2040.svd")
+      rp2040TypeMap = rp2040.buildTypeMap
+
+  test "Enumerated values are sorted in increasing order":
+    let
+      symbols = initHashSet[string]()
+      rp2040enums =
+        createFieldEnums(rp2040.peripherals["ROSC".toSvdId], rp2040TypeMap, symbols)
+      freqEnum = rp2040enums["ROSC_CTRL_FREQ_RANGE"]
+
+    check:
+      freqEnum.fields.mapIt(it.val) == @[4004, 4005, 4006, 4007]

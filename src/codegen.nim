@@ -328,6 +328,10 @@ func createEnum(
     for entry in result.fields.mitems:
       entry.key = prefix & entry.key
 
+  # Sort enumerated values by their numeric value so the generated enum
+  # lists them in increasing order.
+  result.fields.sort(proc(a, b: tuple[key: string, val: int]): int = cmp(a.val, b.val))
+
   # Size pragma is used for register accessors which use an enum value type.
   # This happens when the register defines a "singleton" field, that is, a
   # single field whose size is equal to the register, and this singleton field

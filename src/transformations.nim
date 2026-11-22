@@ -8,6 +8,30 @@ import std/strformat
 import ./basetypes
 import ./utils
 
+
+func parseDimIndices*(dim: Natural, dimIndex: Option[string]): seq[string] =
+  if dimIndex.isNone or dimIndex.get.strip.len == 0:
+    for i in 0..<dim:
+      result.add $i
+    return
+  for part in dimIndex.get.split(','):
+    let t = part.strip
+    if t.contains('-'):
+      let halves = t.split('-')
+      if halves.len == 2:
+        try:
+          let a = parseInt(halves[0].strip)
+          let b = parseInt(halves[1].strip)
+          for v in a..b:
+            result.add $v
+          continue
+        except ValueError:
+          discard
+    result.add t
+  if result.len == 0:
+    for i in 0..<dim:
+      result.add $i
+
 func copyEnum(en: SvdFieldEnum, newParent: SvdId): SvdFieldEnum =
   new result
   result[] = en[]
@@ -173,8 +197,8 @@ proc expand(p: SvdPeripheral): seq[SvdPeripheral] =
     return @[p]
   let
     dIncr = p.dimGroup.dimIncrement.get
-    dimIndex = toSeq(0..<p.dimGroup.dim.get).mapIt($it)
-  for (idx, idxString) in dimIndex.pairs:
+    dimIndices = parseDimIndices(p.dimGroup.dim.get, p.dimGroup.dimIndex)
+  for (idx, idxString) in dimIndices.pairs:
     var newElem = new SvdPeripheral
     newElem[] = p[]
     newElem.name = p.name.replace("%s", idxString)
@@ -193,8 +217,8 @@ proc expand(field: SvdField): seq[SvdField] =
     return @[field]
   let
     dIncr = field.dimGroup.dimIncrement.get
-    dimIndex = toSeq(0..<field.dimGroup.dim.get).mapIt($it)
-  for (idx, idxString) in dimIndex.pairs:
+    dimIndices = parseDimIndices(field.dimGroup.dim.get, field.dimGroup.dimIndex)
+  for (idx, idxString) in dimIndices.pairs:
     var newElem = new SvdField
     newElem[] = field[]
     newElem.name = field.name.replace("%s", idxString)
@@ -219,8 +243,8 @@ func expand(e: SvdRegisterTreeNode): seq[SvdRegisterTreeNode] =
     raise newException(SVDError, e.name & " has dim but no dimIncrement")
   let dIncr = e.dimGroup.dimIncrement.get
 
-  let dimIndex = toSeq(0..<e.dimGroup.dim.get).mapIt($it)
-  for (idx, idxString) in dimIndex.pairs:
+  let dimIndices = parseDimIndices(e.dimGroup.dim.get, e.dimGroup.dimIndex)
+  for (idx, idxString) in dimIndices.pairs:
     var newElem = new SvdRegisterTreeNode
     newElem[] = e[]
     newElem.name = e.name.replace("%s", idxString)

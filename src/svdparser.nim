@@ -132,9 +132,8 @@ func parseFieldEnum(eNode: XmlNode, parentId: SvdId): SvdFieldEnum =
 func parseDimElementGroup(n: XmlNode): SvdDimElementGroup =
   result.dim = n.getChildNaturalOpt("dim")
   result.dimIncrement = n.getChildNaturalOpt("dimIncrement")
-  #result.dimIndex = n.getChildTextOpt("dimIndex")
+  result.dimIndex = n.getChildTextOpt("dimIndex")
   result.dimName = n.getChildTextOpt("dimName")
-  #result.dimIndex = n.getChildTextOpt("dimArrayIndex")
 
   if result.dim.isSome and result.dimIncrement.isNone:
     raise newException(SVDError, "Node has dim but no dimIncrement")

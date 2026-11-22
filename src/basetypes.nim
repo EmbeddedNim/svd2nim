@@ -25,8 +25,8 @@ type
   SvdDimElementGroup* = object
     dim*: Option[Natural]
     dimIncrement*: Option[Natural]
-    # TODO: Implement support for dimIndex and dimArrayIndex
-    #dimIndex*: Option[string]
+    dimIndex*: Option[string]
+    # TODO: Implement support for dimArrayIndex
     dimName*: Option[string]
 
 type
@@ -249,6 +249,8 @@ func update*(base, with: SvdDimElementGroup): SvdDimElementGroup =
     result.dim = with.dim
   if with.dimIncrement.isSome:
     result.dimIncrement = with.dimIncrement
+  if with.dimIndex.isSome:
+    result.dimIndex = with.dimIndex
   if with.dimName.isSome:
     result.dimName = with.dimName
 

@@ -14,12 +14,9 @@ func toTable(s: seq[CodeGenTypeDef]): Table[string, CodeGenTypeDef] =
 
 suite "ARM Example typedefs":
   setup:
-    let
-      device {.used.} = processSvd("./tests/ARM_Example.svd")
-    var ctx {.used.} = initCodeGenContext()
-    ctx.dev = device
-    let devTypeMap = ctx.buildTypeMap()
-    ctx.typeMap = devTypeMap
+    let device {.used.} = processSvd("./tests/ARM_Example.svd")
+    var ctx {.used.} = initCodeGenContext(device)
+    ctx.buildTypeMap()
     let deviceTypes = ctx.createTypeDefs().toTable
 
   test "Create type defs":
@@ -36,13 +33,10 @@ suite "ARM Example typedefs":
 
 suite "SAMD21 typedefs":
   setup:
-    let
-      samd21 {.used.} = processSvd("./tests/ATSAMD21G18A.svd")
-    var ctx {.used.} = initCodeGenContext()
-    ctx.dev = samd21
-    let samd21TypeMap = ctx.buildTypeMap()
-    ctx.typeMap = samd21TypeMap
-    let samd21Types = ctx.createTypeDefs().toTable
+    let samd21 {.used.} = processSvd("./tests/ATSAMD21G18A.svd")
+    var ctx {.used.} = initCodeGenContext(samd21)
+    ctx.buildTypeMap()
+    let samd21Types {.used.} = ctx.createTypeDefs().toTable
 
   test "Create type defs":
     check:
@@ -61,10 +55,8 @@ suite "SAMD21 typedefs":
       samd21Types["TcCount8_COUNT_Type"].members[0].typeName == "uint"
 
   test "Append and prepend register names":
-    var ctxNoPre = initCodeGenContext(ignorePrepend = true)
-    ctxNoPre.dev = samd21
-    let samd21TypeMapNoPre = ctxNoPre.buildTypeMap()
-    ctxNoPre.typeMap = samd21TypeMapNoPre
+    var ctxNoPre = initCodeGenContext(samd21, ignorePrepend = true)
+    ctxNoPre.buildTypeMap()
     let samd21TypesNoPre = ctxNoPre.createTypeDefs().toTable
 
     check:
@@ -72,12 +64,8 @@ suite "SAMD21 typedefs":
       samd21TypesNoPre["AC_Type"].members[0].name == "CTRLA"
 
   test "Create field enums":
-    var ctx2 = initCodeGenContext()
-    ctx2.dev = samd21
-    ctx2.typeMap = samd21TypeMap
     let
-      samd21enums =
-        ctx2.createFieldEnums(samd21.peripherals["GCLK".toSvdId])
+      samd21enums = ctx.createFieldEnums(samd21.peripherals["GCLK".toSvdId])
       idEnum = samd21enums["GCLK_CLKCTRL_ID"]
       genEnum = samd21enums["GCLK_CLKCTRL_GEN"]
 
@@ -93,6 +81,9 @@ suite "SAMD21 typedefs":
       genEnum.fields[8].val == 8
 
 suite "Misc codegen tests":
+  setup:
+    let dev {.used.} = new SvdDevice
+
   test "Sanitize Identifiers":
     check:
       sanitizeIdent("16k") == "x16k" # starts with number
@@ -101,25 +92,6 @@ suite "Misc codegen tests":
       sanitizeIdent("ADDR") == "ADDRx" # is a keyword
       sanitizeIdent("_1INT_CLR") == "x1INT_CLR"
 
-suite "RP2040 enums":
-  setup:
-    let
-      rp2040 {.used.} = processSvd("./tests/RP2040.svd")
-    var ctx {.used.} = initCodeGenContext()
-    ctx.dev = rp2040
-    let rp2040TypeMap = ctx.buildTypeMap()
-    ctx.typeMap = rp2040TypeMap
-
-  test "Enumerated values are sorted in increasing order":
-    let
-      rp2040enums =
-        ctx.createFieldEnums(rp2040.peripherals["ROSC".toSvdId])
-      freqEnum = rp2040enums["ROSC_CTRL_FREQ_RANGE"]
-
-    check:
-      freqEnum.fields.mapIt(it.val) == @[4004, 4005, 4006, 4007]
-
-suite "Codegen dimIndex and symbol conflicts":
   test "parseDimIndices resolves explicit and ranged indices":
     check:
       parseDimIndices(4, string.none) == @["0", "1", "2", "3"]
@@ -128,12 +100,26 @@ suite "Codegen dimIndex and symbol conflicts":
       parseDimIndices(3, some("2,3,4")) == @["2", "3", "4"]
 
   test "conflicting enum values are prefixed":
-    var ctx = initCodeGenContext()
+    var ctx = initCodeGenContext(dev)
     ctx.symbols.incl nimIdentKey("FLASH")
-    var en = SvdFieldEnum(values: @[("Flash", 0), ("Other", 1)])
-    var field = new SvdField
-    field.name = "X"
-    field.enumValues = some en
+
+    var field = SvdField(
+      name: "X", enumValues: some SvdFieldEnum(values: @[("Flash", 0), ("Other", 1)])
+    )
     let cg = ctx.createEnum(field, "T")
     check:
       cg.fields[0].key != "Flash"
+
+suite "RP2040 enums":
+  setup:
+    let rp2040 {.used.} = processSvd("./tests/RP2040.svd")
+    var ctx {.used.} = initCodeGenContext(rp2040)
+    ctx.buildTypeMap()
+
+  test "Enumerated values are sorted in increasing order":
+    let
+      rp2040enums = ctx.createFieldEnums(rp2040.peripherals["ROSC".toSvdId])
+      freqEnum = rp2040enums["ROSC_CTRL_FREQ_RANGE"]
+
+    check:
+      freqEnum.fields.mapIt(it.val) == @[4004, 4005, 4006, 4007]

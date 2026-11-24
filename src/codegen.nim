@@ -65,15 +65,9 @@ type CodeGenContext* = object
   dev*: SvdDevice
 
 proc initCodeGenContext*(
-    dev: SvdDevice = nil, ignoreAppend: bool = false, ignorePrepend: bool = false
+    dev: SvdDevice, ignoreAppend: bool = false, ignorePrepend: bool = false
 ): CodeGenContext =
-  CodeGenContext(
-    dev: dev,
-    ignoreAppend: ignoreAppend,
-    ignorePrepend: ignorePrepend,
-    symbols: initHashSet[string](),
-    typeMap: initTable[SvdId, string](),
-  )
+  CodeGenContext(dev: dev, ignoreAppend: ignoreAppend, ignorePrepend: ignorePrepend)
 
 converter toCodeGenProcDefArg(t: (string, string)): CodeGenProcDefArg =
   result = CodeGenProcDefArg(name: t[0], typ: t[1], defaultVal: string.none)
@@ -127,9 +121,7 @@ func getRegisterPrefixSuffix(ctx: CodeGenContext, p: SvdPeripheral): (string, st
         ""
   return (regPrefix, regSuffix)
 
-func getObjectMemberName(
-    ctx: CodeGenContext, n: SvdRegisterTreeNode
-): string =
+func getObjectMemberName(ctx: CodeGenContext, n: SvdRegisterTreeNode): string =
   case n.kind
   of rnkRegister:
     let
@@ -179,40 +171,41 @@ func hasOwnType(ctx: CodeGenContext, periph: SvdPeripheral): bool =
     )
 
 ## Assign type names for all SVD ids
-func buildTypeMap(ctx: CodeGenContext): Table[SvdId, string] =
+func buildTypeMap(ctx: var CodeGenContext) =
+  var tm: Table[SvdId, string]
   # Pass 1: Assign type names for all "base" types, those that are not derived
   # or dim lists.
   for periph in ctx.dev.peripherals.values:
     if ctx.hasOwnType(periph):
-      result[periph.id] = buildTypeName periph
+      tm[periph.id] = buildTypeName periph
     for regNode in periph.walkRegisters:
       if regNode.typeBase.isNone:
-        result[regNode.id] = buildTypeName(regNode, result[regNode.id.parent])
+        tm[regNode.id] = buildTypeName(regNode, tm[regNode.id.parent])
 
   # Pass 2: Assign existing type names to entities which share existing types.
   for periph in ctx.dev.peripherals.values:
-    if periph.id notin result:
+    if periph.id notin tm:
       assert periph.typeBase.isSome
-      if periph.typeBase.get in result:
-        result[periph.id] = result[periph.typeBase.get]
+      if periph.typeBase.get in tm:
+        tm[periph.id] = tm[periph.typeBase.get]
       else:
         let tname = buildTypeName periph
-        result[periph.id] = tname
-        result[periph.typeBase.get] = tname
+        tm[periph.id] = tname
+        tm[periph.typeBase.get] = tname
 
     for regNode in periph.walkRegisters:
-      if regNode.id notin result:
+      if regNode.id notin tm:
         assert regNode.typeBase.isSome
-        if regNode.typeBase.get in result:
-          result[regNode.id] = result[regNode.typeBase.get]
+        if regNode.typeBase.get in tm:
+          tm[regNode.id] = tm[regNode.typeBase.get]
         else:
-          let tname = buildTypeName(regNode, result[regNode.id.parent])
-          result[regNode.id] = tname
-          result[regNode.typeBase.get] = tname
+          let tname = buildTypeName(regNode, tm[regNode.id.parent])
+          tm[regNode.id] = tname
+          tm[regNode.typeBase.get] = tname
 
-func createTypeDefs(
-    ctx: CodeGenContext
-): seq[CodeGenTypeDef] =
+  ctx.typeMap = tm
+
+func createTypeDefs(ctx: CodeGenContext): seq[CodeGenTypeDef] =
   var knownTypeDefs: Hashset[string]
 
   for periph in ctx.dev.peripherals.values:
@@ -224,9 +217,7 @@ func createTypeDefs(
 
     var pdefs: seq[CodeGenTypeDef]
     pdefs.add CodeGenTypeDef(
-      name: periphTypeName,
-      public: true,
-      members: ctx.getObjectMembers(periph),
+      name: periphTypeName, public: true, members: ctx.getObjectMembers(periph)
     )
 
     # Can't use walkRegisters here in order to preserve correct ordering
@@ -244,11 +235,11 @@ func createTypeDefs(
 
       case regNode.kind
       of rnkCluster:
-         pdefs.add CodeGenTypeDef(
-           name: tname, public: true, members: ctx.getObjectMembers(regNode)
-         )
-         for child in regNode.iterRegisters:
-           regstack.add child
+        pdefs.add CodeGenTypeDef(
+          name: tname, public: true, members: ctx.getObjectMembers(regNode)
+        )
+        for child in regNode.iterRegisters:
+          regstack.add child
       of rnkRegister:
         pdefs.add createRegisterType(tname)
 
@@ -705,11 +696,7 @@ proc renderCluster(
     ctx.renderObjectMembers(cluster, address, numIndent + 1, tg)
     tg.write(repeat(Indent, numIndent) & "),\n")
 
-proc renderPeripheral(
-    ctx: CodeGenContext,
-    periph: SvdPeripheral,
-    tg: File,
-): string =
+proc renderPeripheral(ctx: CodeGenContext, periph: SvdPeripheral, tg: File): string =
   let
     insName = periph.name.stripPlaceHolder.sanitizeIdent
     pTypeName = ctx.typeMap[periph.id]
@@ -817,8 +804,10 @@ proc renderInterrupts(ctx: CodeGenContext, outf: File) =
 
   # Peripheral interrupts
   irqHeader devIrqHdr
-  let interrupts =
-    toSeq(ctx.dev.peripherals.values).mapIt(it.interrupts).foldl(a & b).sortedByIt(it.value)
+  let interrupts = toSeq(ctx.dev.peripherals.values)
+    .mapIt(it.interrupts)
+    .foldl(a & b)
+    .sortedByIt(it.value)
   for (i, iter) in interrupts.pairs:
     if i > 0 and iter.value == interrupts[i - 1].value:
       # Skip duplicated interrupts
@@ -889,9 +878,7 @@ proc renderUncheckedenums(outFileName: string) =
     contents = staticRead ".." / "utils" / modname
   writeFile(joinPath(outFileName.parentDir, modname), contents)
 
-proc renderPeripheralRegTypeDefs(
-    ctx: var CodeGenContext, outf: File
-) =
+proc renderPeripheralRegTypeDefs(ctx: var CodeGenContext, outf: File) =
   renderHeader("# Type definitions for peripheral registers", outf)
   let typeDefs = ctx.createTypeDefs()
   for t in typeDefs:
@@ -899,17 +886,13 @@ proc renderPeripheralRegTypeDefs(
     t.renderType(outf)
     outf.writeLine("")
 
-proc renderPeripheralInstances(
-    ctx: var CodeGenContext, outf: File
-) =
+proc renderPeripheralInstances(ctx: var CodeGenContext, outf: File) =
   renderHeader("# Peripheral object instances", outf)
   for periph in ctx.dev.peripherals.values:
     let constName = ctx.renderPeripheral(periph, outf)
     ctx.symbols.incl nimIdentKey(constName)
 
-proc renderPeripheralRegAccessors(
-    ctx: var CodeGenContext, outf: File
-) =
+proc renderPeripheralRegAccessors(ctx: var CodeGenContext, outf: File) =
   ## Use sets to deduplicate generated code types and procs
   renderHeader("# Accessors for peripheral registers", outf)
   var
@@ -946,9 +929,8 @@ proc renderPeripheralRegAccessors(
       accDefs.incl name
       renderProcDef(bfacc, outf)
 
-proc renderDevice*(ctx: var CodeGenContext, dev: SvdDevice, dirpath: string) =
-  ctx.dev = dev
-  let outFileName = dirPath / dev.metadata.name.toLower() & ".nim"
+proc renderDevice*(ctx: var CodeGenContext, dirpath: string) =
+  let outFileName = dirPath / ctx.dev.metadata.name.toLower() & ".nim"
   var outf = open(outFileName, fmWrite)
   defer:
     outf.close()
@@ -960,7 +942,7 @@ proc renderDevice*(ctx: var CodeGenContext, dev: SvdDevice, dirpath: string) =
   renderCoreModule(ctx, outFileName)
   renderUncheckedenums(outFileName)
 
-  ctx.typeMap = ctx.buildTypeMap()
+  ctx.buildTypeMap()
 
   ctx.renderPeripheralRegTypeDefs(outf)
   ctx.renderPeripheralInstances(outf)

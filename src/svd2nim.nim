@@ -93,10 +93,11 @@ proc main() =
       quit(1)
 
     var ctx = initCodeGenContext(
+      dev,
       ignoreAppend = bool(args["--ignore-append"]),
       ignorePrepend = bool(args["--ignore-prepend"]),
     )
-    ctx.renderDevice(dev, outDirName)
+    ctx.renderDevice(outDirName)
   else:
     stderr.writeLine "Try: svd2nim -h"
     quit(1)

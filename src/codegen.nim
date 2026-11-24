@@ -834,7 +834,7 @@ proc renderDeviceConsts(ctx: var CodeGenContext, outf: File) =
     outf.write("# Some information about this device.\n")
 
     let
-      cpuNameSan = ctx.dev.cpu.name.replace(re2"(M\\d+)\\+", "$1PLUS").sanitizeIdent
+      cpuNameSan = ctx.dev.cpu.name.replace(re2"(M\d+)\+", "$1PLUS").sanitizeIdent
       cpuConsts = {
         "DEVICE": quoted(ctx.dev.metadata.name),
         fmt"{cpuNameSan}_REV": fmt"{convertCpuRevision(ctx.dev.cpu.revision):#06x}",

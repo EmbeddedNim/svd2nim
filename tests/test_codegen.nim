@@ -17,9 +17,10 @@ suite "ARM Example typedefs":
     let
       device {.used.} = processSvd("./tests/ARM_Example.svd")
     var ctx {.used.} = initCodeGenContext()
-    let devTypeMap = ctx.buildTypeMap(device)
+    ctx.dev = device
+    let devTypeMap = ctx.buildTypeMap()
     ctx.typeMap = devTypeMap
-    let deviceTypes = ctx.createTypeDefs(device).toTable
+    let deviceTypes = ctx.createTypeDefs().toTable
 
   test "Create type defs":
     check:
@@ -38,9 +39,10 @@ suite "SAMD21 typedefs":
     let
       samd21 {.used.} = processSvd("./tests/ATSAMD21G18A.svd")
     var ctx {.used.} = initCodeGenContext()
-    let samd21TypeMap = ctx.buildTypeMap(samd21)
+    ctx.dev = samd21
+    let samd21TypeMap = ctx.buildTypeMap()
     ctx.typeMap = samd21TypeMap
-    let samd21Types = ctx.createTypeDefs(samd21).toTable
+    let samd21Types = ctx.createTypeDefs().toTable
 
   test "Create type defs":
     check:
@@ -60,9 +62,10 @@ suite "SAMD21 typedefs":
 
   test "Append and prepend register names":
     var ctxNoPre = initCodeGenContext(ignorePrepend = true)
-    let samd21TypeMapNoPre = ctxNoPre.buildTypeMap(samd21)
+    ctxNoPre.dev = samd21
+    let samd21TypeMapNoPre = ctxNoPre.buildTypeMap()
     ctxNoPre.typeMap = samd21TypeMapNoPre
-    let samd21TypesNoPre = ctxNoPre.createTypeDefs(samd21).toTable
+    let samd21TypesNoPre = ctxNoPre.createTypeDefs().toTable
 
     check:
       samd21Types["AC_Type"].members[0].name == "AC_CTRLA"
@@ -70,6 +73,7 @@ suite "SAMD21 typedefs":
 
   test "Create field enums":
     var ctx2 = initCodeGenContext()
+    ctx2.dev = samd21
     ctx2.typeMap = samd21TypeMap
     let
       samd21enums =
@@ -102,7 +106,8 @@ suite "RP2040 enums":
     let
       rp2040 {.used.} = processSvd("./tests/RP2040.svd")
     var ctx {.used.} = initCodeGenContext()
-    let rp2040TypeMap = ctx.buildTypeMap(rp2040)
+    ctx.dev = rp2040
+    let rp2040TypeMap = ctx.buildTypeMap()
     ctx.typeMap = rp2040TypeMap
 
   test "Enumerated values are sorted in increasing order":

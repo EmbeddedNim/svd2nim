@@ -38,10 +38,11 @@ Files: `src/codegen/model.nim` (new), `src/codegen.nim`
       opts*: CodeGenOptions
       symbols*: HashSet[string]
       typeMap*: Table[SvdId, string]
+      dev*: SvdDevice
    ```
 2. Replace `var cgOpts` with `ctx.opts`; thread `ctx` through. Mutability rule: only procs that mutate `ctx.symbols` (or opts) take `var ctx`; read-only ones take `ctx` by value:
    - `getRegisterPrefixSuffix(p, ctx)` — pure func
-   - `getObjectMemberName(dev, n, ctx)` — pure func
+   - `getObjectMemberName(n, ctx)` — pure func
    - `buildTypeMap(ctx, dev)` — pure func (returns type map, stored in `ctx.typeMap`)
    - `createTypeDefs`, `createFieldEnums`, `createBitfieldTypes`, `createAccessors`, `createBitfieldAccessors` — pure funcs returning IR; `ctx` by value
    - `renderDeviceConsts(dev, var ctx, ...)` — mutates symbols → `var ctx`
@@ -78,6 +79,7 @@ Files: `src/codegen/render.nim`, `src/codegen/model.nim`
       opts*: CodeGenOptions
       symbols*: HashSet[string]
       typeMap*: Table[SvdId, string]
+      dev*: SvdDevice
      output*: Option[ref (proc(s: string))]  # optional writer
    proc write*(ctx: CodeGenContext, s: string) = if ctx.output.isSome: ctx.output.get()(s)
    ```

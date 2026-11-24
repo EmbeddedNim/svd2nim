@@ -62,7 +62,7 @@ type CodeGenContext* = object
   ignorePrepend*: bool
   symbols*: HashSet[string]
 
-proc newCodeGenContext*(
+proc initCodeGenContext*(
     ignoreAppend: bool = false, ignorePrepend: bool = false
 ): CodeGenContext =
   CodeGenContext(
@@ -513,7 +513,7 @@ func getFieldDefaultVal(
         $numVal
 
 func createFieldsWriter(
-    reg: SvdRegisterTreeNode, regTypeName, valType: string, ctx: CodeGenContext
+    ctx: CodeGenContext, reg: SvdRegisterTreeNode, regTypeName, valType: string
 ): CodeGenProcDef =
   ## Create a `write` method that takes fields values as arguments for
   ## registers with fields.
@@ -589,7 +589,7 @@ func createAccessors(
       result[fmt"write[{regTypeName}]"] = writer
 
       if reg.hasFields:
-        let fw = createFieldsWriter(reg, regTypeName, valType, ctx)
+        let fw = ctx.createFieldsWriter(reg, regTypeName, valType)
         # fields writer proc would have exactly one argument if all fields are read-only
         # Only generate the fields writer if at least one field is writable
         if fw.args.len > 1:

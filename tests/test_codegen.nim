@@ -16,7 +16,7 @@ suite "ARM Example typedefs":
   setup:
     let
       device {.used.} = processSvd("./tests/ARM_Example.svd")
-      ctx {.used.} = newCodeGenContext()
+      ctx {.used.} = initCodeGenContext()
       devTypeMap = ctx.buildTypeMap(device)
       deviceTypes = ctx.createTypeDefs(device, devTypeMap).toTable
 
@@ -36,7 +36,7 @@ suite "SAMD21 typedefs":
   setup:
     let
       samd21 {.used.} = processSvd("./tests/ATSAMD21G18A.svd")
-      ctx {.used.} = newCodeGenContext()
+      ctx {.used.} = initCodeGenContext()
       samd21TypeMap = ctx.buildTypeMap(samd21)
       samd21Types = ctx.createTypeDefs(samd21, samd21TypeMap).toTable
 
@@ -58,7 +58,7 @@ suite "SAMD21 typedefs":
 
   test "Append and prepend register names":
     let
-      ctxNoPre = newCodeGenContext(ignorePrepend = true)
+      ctxNoPre = initCodeGenContext(ignorePrepend = true)
       samd21TypeMapNoPre = ctxNoPre.buildTypeMap(samd21)
       samd21TypesNoPre = ctxNoPre.createTypeDefs(samd21, samd21TypeMapNoPre).toTable
 
@@ -68,7 +68,7 @@ suite "SAMD21 typedefs":
 
   test "Create field enums":
     let
-      ctx2 = newCodeGenContext()
+      ctx2 = initCodeGenContext()
       samd21enums =
         ctx2.createFieldEnums(samd21.peripherals["GCLK".toSvdId], samd21TypeMap)
       idEnum = samd21enums["GCLK_CLKCTRL_ID"]
@@ -98,7 +98,7 @@ suite "RP2040 enums":
   setup:
     let
       rp2040 {.used.} = processSvd("./tests/RP2040.svd")
-      ctx {.used.} = newCodeGenContext()
+      ctx {.used.} = initCodeGenContext()
       rp2040TypeMap = ctx.buildTypeMap(rp2040)
 
   test "Enumerated values are sorted in increasing order":
@@ -119,7 +119,7 @@ suite "Codegen dimIndex and symbol conflicts":
       parseDimIndices(3, some("2,3,4")) == @["2", "3", "4"]
 
   test "conflicting enum values are prefixed":
-    var ctx = newCodeGenContext()
+    var ctx = initCodeGenContext()
     ctx.symbols.incl nimIdentKey("FLASH")
     var en = SvdFieldEnum(values: @[("Flash", 0), ("Other", 1)])
     var field = new SvdField

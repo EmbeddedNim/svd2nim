@@ -92,7 +92,7 @@ proc main() =
       stderr.writeLine "ERROR: Output directory does not exist."
       quit(1)
 
-    var ctx = newCodeGenContext(
+    var ctx = initCodeGenContext(
       ignoreAppend = bool(args["--ignore-append"]),
       ignorePrepend = bool(args["--ignore-prepend"]),
     )

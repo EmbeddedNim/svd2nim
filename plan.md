@@ -34,17 +34,18 @@ Files: `src/codegen/model.nim` (new), `src/codegen.nim`
 
 1. Define:
    ```nim
-   type CodeGenContext* = ref object
-     opts*: CodeGenOptions
-     symbols*: HashSet[string]
+    type CodeGenContext* = ref object
+      opts*: CodeGenOptions
+      symbols*: HashSet[string]
+      typeMap*: Table[SvdId, string]
    ```
 2. Replace `var cgOpts` with `ctx.opts`; thread `ctx` through. Mutability rule: only procs that mutate `ctx.symbols` (or opts) take `var ctx`; read-only ones take `ctx` by value:
    - `getRegisterPrefixSuffix(p, ctx)` — pure func
    - `getObjectMemberName(dev, n, ctx)` — pure func
-   - `buildTypeMap(dev, ctx)` — pure func (opts only)
+   - `buildTypeMap(ctx, dev)` — pure func (returns type map, stored in `ctx.typeMap`)
    - `createTypeDefs`, `createFieldEnums`, `createBitfieldTypes`, `createAccessors`, `createBitfieldAccessors` — pure funcs returning IR; `ctx` by value
    - `renderDeviceConsts(dev, var ctx, ...)` — mutates symbols → `var ctx`
-   - `renderPeripheralRegTypeDefs/Instances/Accessors(dev, var ctx, typeMap, ...)` — mutate symbols → `var ctx`
+   - `renderPeripheralRegTypeDefs/Instances/Accessors(ctx: var, dev, outf, ...)` — mutate symbols → `var ctx`; type map read from `ctx.typeMap`
 3. No backwards-compat shim: update `src/svd2nim.nim`, tests, and any callers to the new context-based API as part of the refactor.
 4. Move `CodeGen*` types and `CodeGenOptions` into `model.nim`; `codegen.nim` re-exports.
 
@@ -73,9 +74,10 @@ Files: `src/codegen/render.nim`, `src/codegen/model.nim`
 2. `render*` return `string` instead of writing to `File`. Pure generation; no hidden I/O.
 3. Add optional output support to context without baking I/O into generators:
    ```nim
-   type CodeGenContext* = ref object
-     opts*: CodeGenOptions
-     symbols*: HashSet[string]
+    type CodeGenContext* = ref object
+      opts*: CodeGenOptions
+      symbols*: HashSet[string]
+      typeMap*: Table[SvdId, string]
      output*: Option[ref (proc(s: string))]  # optional writer
    proc write*(ctx: CodeGenContext, s: string) = if ctx.output.isSome: ctx.output.get()(s)
    ```

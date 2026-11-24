@@ -29,7 +29,7 @@ Files: `src/codegen.nim`
 
 Exit criteria: existing tests pass; golden output unchanged (diff generated files before/after).
 
-## Phase 2 — Context object replaces global state
+## Phase 2 — Context object replaces global state (DONE)
 Files: `src/codegen/model.nim` (new), `src/codegen.nim`
 
 1. Define:

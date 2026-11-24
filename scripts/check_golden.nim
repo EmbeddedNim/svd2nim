@@ -20,15 +20,14 @@ import std/strutils
 
 import docopt
 
-const
-  Svds = [
-    ("tests/ARM_Example.svd", @[]),
-    ("tests/ATSAMD21G18A.svd", @["--ignore-prepend"]),
-    ("tests/esp32.svd", @[]),
-    ("tests/RP2040.svd", @[]),
-    ("tests/STM32F103.svd", @[]),
-    ("tests/stm32f429.svd", @[]),
-  ]
+const Svds = [
+  ("tests/ARM_Example.svd", @[]),
+  ("tests/ATSAMD21G18A.svd", @["--ignore-prepend"]),
+  ("tests/esp32.svd", @[]),
+  ("tests/RP2040.svd", @[]),
+  ("tests/STM32F103.svd", @[]),
+  ("tests/stm32f429.svd", @[]),
+]
 
 let help = """
   check_golden - Compare generated SVD output against golden masters.
@@ -75,7 +74,8 @@ proc main() =
       stashed = false
 
   let outDir = "tmp" / "golden_check"
-  if dirExists(outDir): removeDir(outDir)
+  if dirExists(outDir):
+    removeDir(outDir)
   createDir(outDir)
 
   try:
@@ -87,7 +87,11 @@ proc main() =
       origRev = o.strip()
 
       let (b, bc) = execCmdEx("git symbolic-ref --short HEAD")
-      origRef = if bc == 0: b.strip() else: origRev
+      origRef =
+        if bc == 0:
+          b.strip()
+        else:
+          origRev
 
       let (status, _) = execCmdEx("git status --porcelain")
       if status.strip() != "":
@@ -119,7 +123,8 @@ proc main() =
       let generated = outDir / modName
       let golden = "golden" / modName
       if update:
-        if not dirExists("golden"): createDir("golden")
+        if not dirExists("golden"):
+          createDir("golden")
         copyFile(generated, golden)
         echo "UPDATED: ", golden
         continue

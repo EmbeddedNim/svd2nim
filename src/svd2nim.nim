@@ -96,8 +96,8 @@ proc main() =
       ignoreAppend: args["--ignore-append"], ignorePrepend: args["--ignore-prepend"]
     )
 
-    setOptions cgopts
-    renderDevice(dev, outDirName)
+    var ctx = newCodeGenContext(cgopts)
+    renderDevice(dev, outDirName, ctx)
   else:
     stderr.writeLine "Try: svd2nim -h"
     quit(1)

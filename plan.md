@@ -52,7 +52,7 @@ Files: `src/codegen/model.nim` (new), `src/codegen.nim`
 
 Exit criteria: tests updated to construct `CodeGenContext`; output unchanged.
 
-## Phase 3 — Module split
+## Phase 3 — Module split (DONE)
 Files: `src/codegen/model.nim`, `src/codegen/generate.nim`, `src/codegen/render.nim`.
 
 Move functions preserving signatures (now with `ctx`):

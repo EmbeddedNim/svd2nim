@@ -39,9 +39,9 @@ type CodeGenEnumDef = object # Nin enum type definition
   pragma*: string
 
 type CodeGenDistinctDef = object # Nin enum type definition
-  name: string
-  public: bool
-  baseType: string
+  name*: string
+  public*: bool
+  baseType*: string
 
 type CodeGenProcDefArg = object
   name: string
@@ -290,7 +290,7 @@ func getEnumTypeName(enm: SvdFieldEnum, fieldName: string, regType: string): str
 
 func getEnumPrefix(enmDef: CodeGenEnumDef): string =
   var lastPart = enmDef.name.split("_")[^1]
-  while lastPart[0] notin Letters and lastPart.len > 0:
+  while lastPart.len > 0 and lastPart[0] notin Letters:
     lastPart = lastPart[1 .. lastPart.high]
 
   result =
@@ -384,9 +384,10 @@ func createBitfieldTypes(
 
     for field in reg.fields:
       let fieldTypeName = getRegValueType(reg, regTypeName)
-      result[fieldTypeName] = CodeGenDistinctDef(
-        name: fieldTypeName, public: true, basetype: intname props.size
-      )
+      if fieldTypeName notin result:
+        result[fieldTypeName] = CodeGenDistinctDef(
+          name: fieldTypeName, public: true, basetype: intname props.size
+        )
 
 func getFieldType(field: SvdField, regTypeName, implType: string): string =
   # Type of a field is either a bool (if 1-bit length), an Enum type if
@@ -619,7 +620,7 @@ proc renderRegister(
       let address =
         baseAddress + reg.addressOffset + arrIndex * (reg.dimGroup.dimIncrement.get)
       let locIndent = repeat(Indent, numIndent + 1)
-      tg.write(fmt"{locIndent}{typeName}(loc: {address:#x})," & "\n")
+      tg.write(fmt"{locIndent}{typeName}(loc: {address:#x}'u)," & "\n")
     tg.write(repeat(Indent, numIndent) & "],\n")
   else:
     let address = baseAddress + reg.addressOffset

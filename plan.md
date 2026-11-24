@@ -25,7 +25,7 @@ Files: `src/codegen.nim`
 2. Reconcile register address suffix: make dim-array branch emit `'u` like single branch (or remove both); decide based on golden diff.
 3. Export `CodeGenDistinctDef` fields (`name*`, `public*`, `baseType*`).
 4. Guard `createBitfieldTypes` overwrite: only set `result[fieldTypeName]` when not present.
-5. Memoize enum creation in `getFieldDefaultVal` (reuse `createFieldEnums` result or cache by `(field name, regType)`).
+5. ~~Memoize enum creation in `getFieldDefaultVal`~~ Deferred to Phase 5: `createEnum` prefix depends on `codegenSymbols`, so naive memoization can desync enum key names; revisit by passing precomputed enums.
 
 Exit criteria: existing tests pass; golden output unchanged (diff generated files before/after).
 
@@ -92,6 +92,7 @@ Files: `src/codegen/generate.nim`
 2. Extract `sortedMembers(parent)` helper used by `getObjectMembers` and `renderObjectMembers`.
 3. Single pass in `renderPeripheralRegAccessors`: iterate peripherals once, collect into context, render at end.
 4. Remove duplicate `cmpAddrOffset` sort duplication.
+5. Revisit deferred Phase 1 item: memoize `createEnum` in `getFieldDefaultVal` by passing precomputed enums from `createFieldEnums` (prefix depends on `codegenSymbols`; ensure symbol sets align).
 
 Exit criteria: tests pass; generated output unchanged.
 

@@ -57,16 +57,19 @@ type CodeGenProcDef = object
   pragma*: seq[string]
   body*: string
 
-type CodeGenOptions* = object
+type CodeGenContext* = object
   ignoreAppend*: bool
   ignorePrepend*: bool
-
-type CodeGenContext* = object
-  opts*: CodeGenOptions
   symbols*: HashSet[string]
 
-proc newCodeGenContext*(opts: CodeGenOptions = CodeGenOptions()): CodeGenContext =
-  CodeGenContext(opts: opts, symbols: initHashSet[string]())
+proc newCodeGenContext*(
+    ignoreAppend: bool = false, ignorePrepend: bool = false
+): CodeGenContext =
+  CodeGenContext(
+    ignoreAppend: ignoreAppend,
+    ignorePrepend: ignorePrepend,
+    symbols: initHashSet[string](),
+  )
 
 converter toCodeGenProcDefArg(t: (string, string)): CodeGenProcDefArg =
   result = CodeGenProcDefArg(name: t[0], typ: t[1], defaultVal: string.none)
@@ -105,28 +108,28 @@ func getDimArrayTypeExpr[T: SomeSvdDimable](e: T, typeName: string): string =
   else:
     typeName
 
-proc getRegisterPrefixSuffix(p: SvdPeripheral, ctx: CodeGenContext): (string, string) =
+func getRegisterPrefixSuffix(ctx: CodeGenContext, p: SvdPeripheral): (string, string) =
   let
     regPrefix =
-      if not ctx.opts.ignorePrepend:
+      if not ctx.ignorePrepend:
         p.prependToName.get("")
       else:
         ""
     regSuffix =
-      if not ctx.opts.ignoreAppend:
+      if not ctx.ignoreAppend:
         p.appendToName.get("")
       else:
         ""
   return (regPrefix, regSuffix)
 
-proc getObjectMemberName(
-    dev: SvdDevice, n: SvdRegisterTreeNode, ctx: CodeGenContext
+func getObjectMemberName(
+    ctx: CodeGenContext, dev: SvdDevice, n: SvdRegisterTreeNode
 ): string =
   case n.kind
   of rnkRegister:
     let
       parentPeriph = dev.peripherals[parentPeripheral(n.id)]
-      (regPrefix, regSuffix) = parentPeriph.getRegisterPrefixSuffix(ctx)
+      (regPrefix, regSuffix) = ctx.getRegisterPrefixSuffix(parentPeriph)
     result = regPrefix & n.name & regSuffix
   of rnkCluster:
     # SVD spec says that appendToName/prependToName applies to "registers"
@@ -134,8 +137,8 @@ proc getObjectMemberName(
     result = n.name
   result = result.stripPlaceHolder.sanitizeIdent
 
-proc getObjectMembers[T: SvdRegisterParent](
-    e: T, typeNames: Table[SvdId, string], dev: SvdDevice, ctx: CodeGenContext
+func getObjectMembers[T: SvdRegisterParent](
+    ctx: CodeGenContext, e: T, typeNames: Table[SvdId, string], dev: SvdDevice
 ): seq[TypeDefField] =
   let children = block:
     var c = toSeq e.iterRegisters
@@ -144,7 +147,7 @@ proc getObjectMembers[T: SvdRegisterParent](
 
   for c in children:
     let
-      memberName = dev.getObjectMemberName(c, ctx)
+      memberName = ctx.getObjectMemberName(dev, c)
       memberType = getDimArrayTypeExpr(c, typeNames[c.id])
       def = TypeDefField(name: memberName, typeName: memberType, public: true)
     result.add def
@@ -154,7 +157,7 @@ func createRegisterType(name: string): CodeGenTypeDef =
   result.public = true
   result.members.add TypeDefField(name: "loc", public: false, typeName: "uint")
 
-proc hasOwnType(dev: SvdDevice, periph: SvdPeripheral, ctx: CodeGenContext): bool =
+func hasOwnType(ctx: CodeGenContext, dev: SvdDevice, periph: SvdPeripheral): bool =
   var basePeriph: SvdPeripheral = nil
   if periph.typeBase.isSome:
     basePeriph = dev.peripherals[periph.typeBase.get]
@@ -163,19 +166,19 @@ proc hasOwnType(dev: SvdDevice, periph: SvdPeripheral, ctx: CodeGenContext): boo
     periph.typeBase.isNone or (
       (
         periph.prependToName.isSome and periph.prependToName != basePeriph.prependToName and
-        not ctx.opts.ignorePrepend
+        not ctx.ignorePrepend
       ) or (
         periph.appendToName.isSome and periph.appendToName != basePeriph.appendToName and
-        not ctx.opts.ignoreAppend
+        not ctx.ignoreAppend
       )
     )
 
 ## Assign type names for all SVD ids
-proc buildTypeMap(dev: SvdDevice, ctx: CodeGenContext): Table[SvdId, string] =
+func buildTypeMap(ctx: CodeGenContext, dev: SvdDevice): Table[SvdId, string] =
   # Pass 1: Assign type names for all "base" types, those that are not derived
   # or dim lists.
   for periph in dev.peripherals.values:
-    if dev.hasOwnType(periph, ctx):
+    if ctx.hasOwnType(dev, periph):
       result[periph.id] = buildTypeName periph
     for regNode in periph.walkRegisters:
       if regNode.typeBase.isNone:
@@ -202,8 +205,8 @@ proc buildTypeMap(dev: SvdDevice, ctx: CodeGenContext): Table[SvdId, string] =
           result[regNode.id] = tname
           result[regNode.typeBase.get] = tname
 
-proc createTypeDefs(
-    dev: SvdDevice, names: Table[SvdId, string], ctx: CodeGenContext
+func createTypeDefs(
+    ctx: CodeGenContext, dev: SvdDevice, names: Table[SvdId, string]
 ): seq[CodeGenTypeDef] =
   var knownTypeDefs: Hashset[string]
 
@@ -218,7 +221,7 @@ proc createTypeDefs(
     pdefs.add CodeGenTypeDef(
       name: periphTypeName,
       public: true,
-      members: getObjectMembers(periph, names, dev, ctx),
+      members: ctx.getObjectMembers(periph, names, dev),
     )
 
     # Can't use walkRegisters here in order to preserve correct ordering
@@ -237,7 +240,7 @@ proc createTypeDefs(
       case regNode.kind
       of rnkCluster:
         pdefs.add CodeGenTypeDef(
-          name: tname, public: true, members: getObjectMembers(regNode, names, dev, ctx)
+          name: tname, public: true, members: ctx.getObjectMembers(regNode, names, dev)
         )
         for child in regNode.iterRegisters:
           regstack.add child
@@ -308,7 +311,7 @@ func getEnumPrefix(enmDef: CodeGenEnumDef): string =
       "x"
 
 func createEnum(
-    field: SvdField, regType: string, ctx: CodeGenContext, size: Natural = 0
+    ctx: CodeGenContext, field: SvdField, regType: string, size: Natural = 0
 ): CodeGenEnumDef =
   let svdEnum = field.enumValues.get
 
@@ -350,7 +353,7 @@ func hasSingletonField(reg: SvdRegisterTreeNode): bool =
   result = reg.fields.len == 1 and reg.fields[0].bitsize == reg.resolvedProperties.size
 
 func createFieldEnums(
-    periph: SvdPeripheral, types: Table[SvdId, string], ctx: CodeGenContext
+    ctx: CodeGenContext, periph: SvdPeripheral, types: Table[SvdId, string]
 ): OrderedTable[string, CodeGenEnumDef] =
   var regset: HashSet[string]
   for reg in periph.walkRegistersOnly:
@@ -364,7 +367,7 @@ func createFieldEnums(
       if field.enumValues.isSome:
         let
           props = reg.resolvedProperties
-          en = createEnum(field, typeName, ctx, (props.size div 8))
+          en = ctx.createEnum(field, typeName, (props.size div 8))
         result[en.name] = en
 
 func intname(size: Natural): string =
@@ -408,7 +411,7 @@ func getFieldType(field: SvdField, regTypeName, implType: string): string =
     implType
 
 func createBitfieldAccessors(
-    periph: SvdPeripheral, types: Table[SvdId, string], ctx: CodeGenContext
+    ctx: CodeGenContext, periph: SvdPeripheral, types: Table[SvdId, string]
 ): OrderedTable[string, CodeGenProcDef] =
   for reg in periph.walkRegistersOnly:
     let
@@ -485,17 +488,17 @@ func createBitfieldAccessors(
         result[fmt"{setter.name}[{regValueType}, {valType}]"] = setter
 
 func getFieldDefaultVal(
+    ctx: CodeGenContext,
     field: SvdField,
     regTypeName: string,
     regProps: ResolvedRegProperties,
-    ctx: CodeGenContext,
 ): string =
   let
     fslice = field.lsb.int .. field.msb.int
     numVal = regProps.resetValue.bitsliced(fslice)
   result =
     if field.enumValues.isSome:
-      let enumObj = createEnum(field, regTypeName, ctx)
+      let enumObj = ctx.createEnum(field, regTypeName)
       var val = enumObj.fields[0].key
       for (k, v) in enumObj.fields:
         if v == numVal:
@@ -530,7 +533,7 @@ func createFieldsWriter(
           "." & implType
         else:
           ""
-      defValStr = getFieldDefaultVal(field, regTypeName, reg.resolvedProperties, ctx)
+      defValStr = ctx.getFieldDefaultVal(field, regTypeName, reg.resolvedProperties)
 
     if field.access.get(raReadWrite).isWritable:
       result.args.add CodeGenProcDefArg(
@@ -542,7 +545,7 @@ func createFieldsWriter(
   result.body.add fmt"reg.write x.{valType}"
 
 func createAccessors(
-    periph: SvdPeripheral, types: Table[SvdId, string], ctx: CodeGenContext
+    ctx: CodeGenContext, periph: SvdPeripheral, types: Table[SvdId, string]
 ): OrderedTable[string, CodeGenProcDef] =
   for reg in periph.walkRegistersOnly:
     let
@@ -632,22 +635,22 @@ proc renderRegister(
     tg.write(fmt"{typeName}(loc: {address:#x}'u)," & "\n")
 
 proc renderCluster(
+  ctx: CodeGenContext,
   cluster: SvdRegisterTreeNode,
   numIndent: Natural,
   baseAddress: Natural,
   dev: SvdDevice,
   typeMap: Table[SvdId, string],
-  ctx: CodeGenContext,
   tg: File,
 )
 
 proc renderObjectMembers(
+    ctx: CodeGenContext,
     e: SvdRegisterParent,
     baseAddress: Natural,
     numIndent: Natural,
     dev: SvdDevice,
     typeMap: Table[SvdId, string],
-    ctx: CodeGenContext,
     tg: File,
 ) =
   when typeof(e) is SvdRegisterTreeNode:
@@ -662,7 +665,7 @@ proc renderObjectMembers(
 
   for c in children:
     let
-      fName = dev.getObjectMemberName(c, ctx)
+      fName = ctx.getObjectMemberName(dev, c)
       typeName = typeMap[c.id]
     tg.write(fmt"{locIndent}{fName}: ")
 
@@ -670,15 +673,15 @@ proc renderObjectMembers(
     of rnkRegister:
       renderRegister(c, typeName, numIndent, baseAddress, tg)
     of rnkCluster:
-      renderCluster(c, numIndent, baseAddress, dev, typeMap, ctx, tg)
+      ctx.renderCluster(c, numIndent, baseAddress, dev, typeMap, tg)
 
 proc renderCluster(
+    ctx: CodeGenContext,
     cluster: SvdRegisterTreeNode,
     numIndent: Natural,
     baseAddress: Natural,
     dev: SvdDevice,
     typeMap: Table[SvdId, string],
-    ctx: CodeGenContext,
     tg: File,
 ) =
   assert cluster.kind == rnkCluster
@@ -694,20 +697,20 @@ proc renderCluster(
         baseAddress + cluster.addressOffset +
         arrIndex * (cluster.dimGroup.dimIncrement.get)
       tg.write(fmt"{locIndent}{typeName}(" & "\n")
-      renderObjectMembers(cluster, address, numIndent + 2, dev, typeMap, ctx, tg)
+      ctx.renderObjectMembers(cluster, address, numIndent + 2, dev, typeMap, tg)
       tg.write(locIndent & "),\n")
     tg.write(repeat(Indent, numIndent) & "],\n")
   else:
     let address = baseAddress + cluster.addressOffset
     tg.write(fmt"{typeName}(" & "\n")
-    renderObjectMembers(cluster, address, numIndent + 1, dev, typeMap, ctx, tg)
+    ctx.renderObjectMembers(cluster, address, numIndent + 1, dev, typeMap, tg)
     tg.write(repeat(Indent, numIndent) & "),\n")
 
 proc renderPeripheral(
+    ctx: CodeGenContext,
     periph: SvdPeripheral,
     typeMap: Table[SvdId, string],
     dev: SvdDevice,
-    ctx: CodeGenContext,
     tg: File,
 ): string =
   let
@@ -721,12 +724,12 @@ proc renderPeripheral(
     for arrIndex in 0 ..< (periph.dimGroup.dim.get):
       let address = periph.baseAddress + arrIndex * periph.dimGroup.dimIncrement.get
       tg.write(fmt"{Indent}{pTypeName}(" & "\n")
-      renderObjectMembers(periph, address, 2, dev, typeMap, ctx, tg)
+      ctx.renderObjectMembers(periph, address, 2, dev, typeMap, tg)
       tg.write(Indent & "),\n")
     tg.write(Indent & "],\n\n")
   else:
     tg.writeLine(fmt"const {insName}* = {pTypeName}(")
-    renderObjectMembers(periph, periph.baseAddress, 1, dev, typeMap, ctx, tg)
+    ctx.renderObjectMembers(periph, periph.baseAddress, 1, dev, typeMap, tg)
     tg.write(")\n\n")
 
   result = insname
@@ -840,7 +843,7 @@ func convertCpuRevision(text: string): uint =
 func quoted(s: string): string =
   '"' & s & '"'
 
-proc renderDeviceConsts(dev: SvdDevice, ctx: var CodeGenContext, outf: File) =
+proc renderDeviceConsts(ctx: var CodeGenContext, dev: SvdDevice, outf: File) =
   if not dev.cpu.isNil:
     outf.write("# Some information about this device.\n")
 
@@ -890,25 +893,25 @@ proc renderUncheckedenums(outFileName: string) =
   writeFile(joinPath(outFileName.parentDir, modname), contents)
 
 proc renderPeripheralRegTypeDefs(
-    dev: SvdDevice, ctx: var CodeGenContext, typeMap: Table[SvdId, string], outf: File
+    ctx: var CodeGenContext, dev: SvdDevice, typeMap: Table[SvdId, string], outf: File
 ) =
   renderHeader("# Type definitions for peripheral registers", outf)
-  let typeDefs = dev.createTypeDefs(typeMap, ctx)
+  let typeDefs = ctx.createTypeDefs(dev, typeMap)
   for t in typeDefs:
     ctx.symbols.incl nimIdentKey(t.name)
     t.renderType(outf)
     outf.writeLine("")
 
 proc renderPeripheralInstances(
-    dev: SvdDevice, ctx: var CodeGenContext, typeMap: Table[SvdId, string], outf: File
+    ctx: var CodeGenContext, dev: SvdDevice, typeMap: Table[SvdId, string], outf: File
 ) =
   renderHeader("# Peripheral object instances", outf)
   for periph in dev.peripherals.values:
-    let constName = renderPeripheral(periph, typeMap, dev, ctx, outf)
+    let constName = ctx.renderPeripheral(periph, typeMap, dev, outf)
     ctx.symbols.incl nimIdentKey(constName)
 
 proc renderPeripheralRegAccessors(
-    dev: SvdDevice, ctx: var CodeGenContext, typeMap: Table[SvdId, string], outf: File
+    ctx: var CodeGenContext, dev: SvdDevice, typeMap: Table[SvdId, string], outf: File
 ) =
   ## Use sets to deduplicate generated code types and procs
   renderHeader("# Accessors for peripheral registers", outf)
@@ -927,26 +930,26 @@ proc renderPeripheralRegAccessors(
       typedefs.add def
     renderDistinctTypes(typedefs, outf)
 
-    for (name, en) in createFieldEnums(p, typeMap, ctx).pairs:
+    for (name, en) in ctx.createFieldEnums(p, typeMap).pairs:
       if name in enumDefs:
         continue
       enumDefs.incl name
       ctx.symbols.incl nimIdentKey(en.name)
       renderEnum(en, outf)
 
-    for (name, acc) in createAccessors(p, typeMap, ctx).pairs:
+    for (name, acc) in ctx.createAccessors(p, typeMap).pairs:
       if name in accDefs:
         continue
       accDefs.incl name
       renderProcDef(acc, outf)
 
-    for (name, bfacc) in createBitfieldAccessors(p, typeMap, ctx).pairs:
+    for (name, bfacc) in ctx.createBitfieldAccessors(p, typeMap).pairs:
       if name in accDefs:
         continue
       accDefs.incl name
       renderProcDef(bfacc, outf)
 
-proc renderDevice*(dev: SvdDevice, dirpath: string, ctx: var CodeGenContext) =
+proc renderDevice*(ctx: var CodeGenContext, dev: SvdDevice, dirpath: string) =
   let outFileName = dirPath / dev.metadata.name.toLower() & ".nim"
   var outf = open(outFileName, fmWrite)
   defer:
@@ -954,13 +957,13 @@ proc renderDevice*(dev: SvdDevice, dirpath: string, ctx: var CodeGenContext) =
 
   renderNimImportExports(dev, outf)
 
-  renderDeviceConsts(dev, ctx, outf)
+  ctx.renderDeviceConsts(dev, outf)
   renderInterrupts(dev, outf)
   renderCoreModule(dev, outFileName)
   renderUncheckedenums(outFileName)
 
-  let typeMap = dev.buildTypeMap(ctx)
+  let typeMap = ctx.buildTypeMap(dev)
 
-  renderPeripheralRegTypeDefs(dev, ctx, typeMap, outf)
-  renderPeripheralInstances(dev, ctx, typeMap, outf)
-  renderPeripheralRegAccessors(dev, ctx, typeMap, outf)
+  ctx.renderPeripheralRegTypeDefs(dev, typeMap, outf)
+  ctx.renderPeripheralInstances(dev, typeMap, outf)
+  ctx.renderPeripheralRegAccessors(dev, typeMap, outf)

@@ -92,12 +92,11 @@ proc main() =
       stderr.writeLine "ERROR: Output directory does not exist."
       quit(1)
 
-    let cgopts = CodeGenOptions(
-      ignoreAppend: args["--ignore-append"], ignorePrepend: args["--ignore-prepend"]
+    var ctx = newCodeGenContext(
+      ignoreAppend = bool(args["--ignore-append"]),
+      ignorePrepend = bool(args["--ignore-prepend"]),
     )
-
-    var ctx = newCodeGenContext(cgopts)
-    renderDevice(dev, outDirName, ctx)
+    ctx.renderDevice(dev, outDirName)
   else:
     stderr.writeLine "Try: svd2nim -h"
     quit(1)

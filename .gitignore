@@ -4,6 +4,9 @@ build/
 tmp/
 output*/
 
+# Used by scripts/check_golden.nim
+golden/
+
 *.kate-swp
 *.backup
 

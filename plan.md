@@ -18,11 +18,11 @@ src/
   codegen.nim        # aggregator: import all submodules, re-export public API
 ```
 
-## Phase 1 — Bug fixes + consistency (low risk, no structural change)
+## Phase 1 — Bug fixes + consistency (DONE)
 Files: `src/codegen.nim`
 
 1. Fix `getEnumPrefix` index-before-length: reorder condition to `lastPart.len > 0 and lastPart[0] notin Letters`.
-2. Reconcile register address suffix: make dim-array branch emit `'u` like single branch (or remove both); decide based on golden diff.
+2. Reconcile register address suffix: keep master's existing output (no 'u on dim-array addresses) to preserve byte-identical generation; suffix consistency deferred/not needed.
 3. Export `CodeGenDistinctDef` fields (`name*`, `public*`, `baseType*`).
 4. Guard `createBitfieldTypes` overwrite: only set `result[fieldTypeName]` when not present.
 5. ~~Memoize enum creation in `getFieldDefaultVal`~~ Deferred to Phase 5: `createEnum` prefix depends on `codegenSymbols`, so naive memoization can desync enum key names; revisit by passing precomputed enums.

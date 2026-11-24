@@ -620,7 +620,7 @@ proc renderRegister(
       let address =
         baseAddress + reg.addressOffset + arrIndex * (reg.dimGroup.dimIncrement.get)
       let locIndent = repeat(Indent, numIndent + 1)
-      tg.write(fmt"{locIndent}{typeName}(loc: {address:#x}'u)," & "\n")
+      tg.write(fmt"{locIndent}{typeName}(loc: {address:#x})," & "\n")
     tg.write(repeat(Indent, numIndent) & "],\n")
   else:
     let address = baseAddress + reg.addressOffset

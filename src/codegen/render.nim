@@ -42,37 +42,37 @@ proc renderNimImportExports(ctx: CodeGenContext) =
     """.dedent.strip
   ctx.output.write "\n\n"
 
-proc renderType(typ: CodeGenTypeDef, tg: Stream) =
+proc renderType(ctx: CodeGenContext, typ: CodeGenTypeDef) =
   let
     star = if typ.public: "*" else: ""
     typName = typ.name.sanitizeIdent
-  tg.writeLine(fmt"type {typName}{star} = object")
+  ctx.output.writeLine(fmt"type {typName}{star} = object")
   for f in typ.members:
     let
       fstar = if f.public: "*" else: ""
       fname = f.name.stripPlaceHolder.sanitizeIdent
-    tg.writeLine(Indent & fmt"{fName}{fstar}: {f.typeName}")
+    ctx.output.writeLine(Indent & fmt"{fName}{fstar}: {f.typeName}")
 
 proc renderRegister(
+    ctx: CodeGenContext,
     reg: SvdRegisterTreeNode,
     typeName: string,
     numIndent: Natural,
     baseAddress: Natural,
-    tg: Stream,
 ) =
   assert reg.kind == rnkRegister
 
   if reg.isDimArray:
-    tg.write("[\n")
+    ctx.output.write("[\n")
     for arrIndex in 0 ..< (reg.dimGroup.dim.get):
       let address =
         baseAddress + reg.addressOffset + arrIndex * (reg.dimGroup.dimIncrement.get)
       let locIndent = repeat(Indent, numIndent + 1)
-      tg.write(fmt"{locIndent}{typeName}(loc: {address:#x})," & "\n")
-    tg.write(repeat(Indent, numIndent) & "],\n")
+      ctx.output.write(fmt"{locIndent}{typeName}(loc: {address:#x})," & "\n")
+    ctx.output.write(repeat(Indent, numIndent) & "],\n")
   else:
     let address = baseAddress + reg.addressOffset
-    tg.write(fmt"{typeName}(loc: {address:#x}'u)," & "\n")
+    ctx.output.write(fmt"{typeName}(loc: {address:#x}'u)," & "\n")
 
 proc renderCluster(
   ctx: CodeGenContext,
@@ -102,7 +102,7 @@ proc renderObjectMembers(
 
     case c.kind
     of rnkRegister:
-      renderRegister(c, typeName, numIndent, baseAddress, ctx.output)
+      ctx.renderRegister(c, typeName, numIndent, baseAddress)
     of rnkCluster:
       ctx.renderCluster(c, numIndent, baseAddress)
 
@@ -156,7 +156,7 @@ proc renderPeripheral(ctx: CodeGenContext, periph: SvdPeripheral): string =
 
   result = insname
 
-proc renderEnum(en: CodeGenEnumDef, tg: Stream) =
+proc renderEnum(ctx: CodeGenContext, en: CodeGenEnumDef) =
   let
     star = if en.public: "*" else: ""
     pragmaStr =
@@ -164,21 +164,21 @@ proc renderEnum(en: CodeGenEnumDef, tg: Stream) =
         fmt" {{.{en.pragma}.}}"
       else:
         ""
-  tg.writeLine(fmt"type {en.name}{star}{pragmaStr} = enum")
+  ctx.output.writeLine(fmt"type {en.name}{star}{pragmaStr} = enum")
   for (k, v) in en.fields:
-    tg.writeLine(fmt"{Indent}{k} = {v:#x},")
-  tg.write "\n"
+    ctx.output.writeLine(fmt"{Indent}{k} = {v:#x},")
+  ctx.output.write "\n"
 
-proc renderDistinctTypes(typedefs: seq[CodeGenDistinctDef], tg: Stream) =
+proc renderDistinctTypes(ctx: CodeGenContext, typedefs: seq[CodeGenDistinctDef]) =
   if typedefs.len == 0:
     return
-  tg.writeLine "type"
+  ctx.output.writeLine "type"
   for def in typedefs:
     let star = if def.public: "*" else: ""
-    tg.writeLine fmt"{Indent}{def.name}{star} = distinct {def.basetype}"
-  tg.write("\n")
+    ctx.output.writeLine fmt"{Indent}{def.name}{star} = distinct {def.basetype}"
+  ctx.output.write("\n")
 
-proc renderProcDef(prd: CodeGenProcDef, tg: Stream) =
+proc renderProcDef(ctx: CodeGenContext, prd: CodeGenProcDef) =
   let
     retString =
       if prd.retType.len > 0:
@@ -202,25 +202,25 @@ proc renderProcDef(prd: CodeGenProcDef, tg: Stream) =
     argStringSeq.add fmt"{argObj.name}: {argObj.typ}{defValStr}"
   let argString = argStringSeq.join ", "
 
-  tg.writeLine(fmt"{prd.keyword} {prd.name}{star}({argString}){retString}{pragmaStr} =")
+  ctx.output.writeLine(fmt"{prd.keyword} {prd.name}{star}({argString}){retString}{pragmaStr} =")
   for line in prd.body.splitLines:
-    tg.writeLine Indent & line
-  tg.write "\n"
+    ctx.output.writeLine Indent & line
+  ctx.output.write "\n"
 
 func asSingleLine(s: string): string =
   s.splitLines.mapIt(it.strip).join(" ")
 
-proc renderHeader(text: string, outf: Stream) =
-  outf.write("\n")
-  outf.write(repeat("#", 80))
-  outf.write("\n")
-  outf.write(text)
-  outf.write("\n")
-  outf.write(repeat("#", 80))
-  outf.write("\n")
+proc renderHeader(ctx: CodeGenContext, text: string) =
+  ctx.output.write("\n")
+  ctx.output.write(repeat("#", 80))
+  ctx.output.write("\n")
+  ctx.output.write(text)
+  ctx.output.write("\n")
+  ctx.output.write(repeat("#", 80))
+  ctx.output.write("\n")
 
 proc renderInterrupts(ctx: CodeGenContext) =
-  renderHeader("# Interrupt Number Definition", ctx.output)
+  renderHeader(ctx, "# Interrupt Number Definition")
   ctx.output.writeLine("type IRQn* = enum")
   let
     cmExcHdr = "# #### CPU Core Exception Numbers "
@@ -317,22 +317,22 @@ proc renderUncheckedenums(outFileName: string) =
   writeFile(joinPath(outFileName.parentDir, modname), contents)
 
 proc renderPeripheralRegTypeDefs(ctx: var CodeGenContext) =
-  renderHeader("# Type definitions for peripheral registers", ctx.output)
+  renderHeader(ctx, "# Type definitions for peripheral registers")
   let typeDefs = ctx.createTypeDefs()
   for t in typeDefs:
     ctx.symbols.incl nimIdentKey(t.name)
-    t.renderType(ctx.output)
+    ctx.renderType(t)
     ctx.output.writeLine("")
 
 proc renderPeripheralInstances(ctx: var CodeGenContext) =
-  renderHeader("# Peripheral object instances", ctx.output)
+  renderHeader(ctx, "# Peripheral object instances")
   for periph in ctx.dev.peripherals.values:
     let constName = ctx.renderPeripheral(periph)
     ctx.symbols.incl nimIdentKey(constName)
 
 proc renderPeripheralRegAccessors(ctx: var CodeGenContext) =
   ## Use sets to deduplicate generated code types and procs
-  renderHeader("# Accessors for peripheral registers", ctx.output)
+  renderHeader(ctx, "# Accessors for peripheral registers")
   var
     fieldDistinctDefs: HashSet[string]
     enumDefs: HashSet[string]
@@ -346,26 +346,26 @@ proc renderPeripheralRegAccessors(ctx: var CodeGenContext) =
       fieldDistinctDefs.incl name
       ctx.symbols.incl nimIdentKey(name)
       typedefs.add def
-    renderDistinctTypes(typedefs, ctx.output)
+    ctx.renderDistinctTypes(typedefs)
 
     for (name, en) in ctx.createFieldEnums(p).pairs:
       if name in enumDefs:
         continue
       enumDefs.incl name
       ctx.symbols.incl nimIdentKey(en.name)
-      renderEnum(en, ctx.output)
+      ctx.renderEnum(en)
 
     for (name, acc) in ctx.createAccessors(p).pairs:
       if name in accDefs:
         continue
       accDefs.incl name
-      renderProcDef(acc, ctx.output)
+      ctx.renderProcDef(acc)
 
     for (name, bfacc) in ctx.createBitfieldAccessors(p).pairs:
       if name in accDefs:
         continue
       accDefs.incl name
-      renderProcDef(bfacc, ctx.output)
+      ctx.renderProcDef(bfacc)
 
 proc renderDevice*(
     dev: SvdDevice,

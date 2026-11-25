@@ -7,9 +7,6 @@ import ./model
 
 const TypeSuffix = "_Type"
 
-func intname*(size: Natural): string =
-  "uint" & $size
-
 func appendTypeName(parentName: string, name: string): string =
   if parentName.endsWith(TypeSuffix):
     result = parentName[0 .. ^(TypeSuffix.len + 1)]
@@ -49,21 +46,6 @@ func hasOwnType(ctx: CodeGenContext, periph: SvdPeripheral): bool =
       )
     )
 
-func getEnumTypeName*(enm: SvdFieldEnum, fieldName: string, regType: string): string =
-  if enm.headerEnumName.isSome:
-    enm.headerEnumName.get
-  else:
-    appendTypeName(regType, fieldName)
-
-func getRegValueType*(reg: SvdRegisterTreeNode, typeName: string): string =
-  assert reg.kind == rnkRegister
-  if reg.hasFields:
-    typeName.appendTypeName("Fields")
-  elif reg.hasSingletonField and reg.fields[0].enumValues.isSome:
-    getEnumTypeName(reg.fields[0].enumValues.get, reg.fields[0].name, typeName)
-  else:
-    intname reg.resolvedProperties.size
-
 ## Assign type names for all SVD ids
 func buildTypeMap*(ctx: var CodeGenContext) =
   var tm: Table[SvdId, string]
@@ -98,3 +80,21 @@ func buildTypeMap*(ctx: var CodeGenContext) =
           tm[regNode.typeBase.get] = tname
 
   ctx.typeMap = tm
+
+func intname*(size: Natural): string =
+  "uint" & $size
+
+func getEnumTypeName*(enm: SvdFieldEnum, fieldName: string, regType: string): string =
+  if enm.headerEnumName.isSome:
+    enm.headerEnumName.get
+  else:
+    appendTypeName(regType, fieldName)
+
+func getRegValueType*(reg: SvdRegisterTreeNode, typeName: string): string =
+  assert reg.kind == rnkRegister
+  if reg.hasFields:
+    typeName.appendTypeName("Fields")
+  elif reg.hasSingletonField and reg.fields[0].enumValues.isSome:
+    getEnumTypeName(reg.fields[0].enumValues.get, reg.fields[0].name, typeName)
+  else:
+    intname reg.resolvedProperties.size

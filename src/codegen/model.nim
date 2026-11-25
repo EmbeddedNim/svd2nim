@@ -1,17 +1,8 @@
-import std/strutils
 import std/tables
 import std/sets
 import std/options
 
 import ../basetypes
-
-func nimIdentKey*(s: string): string =
-  ## Normalize an identifier for Nim's case/underscore-insensitive equality.
-  s.toLowerAscii.replace("_", "")
-
-const
-  Indent = "  "
-  TypeSuffix = "_Type"
 
 type TypeDefField* = object
   name*: string

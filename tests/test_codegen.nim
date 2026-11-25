@@ -2,7 +2,7 @@ import std/unittest
 import std/sequtils
 import std/tables
 import std/sets
-import codegen {.all.}
+import codegen/internal
 import svd2nim
 import utils
 import basetypes

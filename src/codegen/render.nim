@@ -334,14 +334,27 @@ proc renderPeripheralInstances(ctx: var CodeGenContext) =
     ctx.symbols.incl nimIdentKey(constName)
 
 proc renderPeripheralRegAccessors(ctx: var CodeGenContext) =
-  ## Use sets to deduplicate generated code types and procs
+  ## Generate bitfield distinct types, field enums, register accessors and
+  ## bitfield accessors for every peripheral. Items are collected into
+  ## per-peripheral chunks first (deduplicated across peripherals) and
+  ## rendered afterwards, so each category is emitted in the same order as
+  ## before while avoiding interleaving create/render calls.
   renderHeader(ctx, "# Accessors for peripheral registers")
   var
     fieldDistinctDefs: HashSet[string]
     enumDefs: HashSet[string]
     accDefs: HashSet[string]
 
+  type AccessorChunk = object
+    distinctDefs: seq[CodeGenDistinctDef]
+    enums: seq[CodeGenEnumDef]
+    procs: seq[CodeGenProcDef]
+
+  var chunks: seq[AccessorChunk]
+
   for p in ctx.dev.peripherals.values:
+    var chunk: AccessorChunk
+
     var typedefs: seq[CodeGenDistinctDef]
     for (name, def) in ctx.createBitfieldTypes(p).pairs:
       if name in fieldDistinctDefs:
@@ -349,26 +362,35 @@ proc renderPeripheralRegAccessors(ctx: var CodeGenContext) =
       fieldDistinctDefs.incl name
       ctx.symbols.incl nimIdentKey(name)
       typedefs.add def
-    ctx.renderDistinctTypes(typedefs)
+    chunk.distinctDefs = typedefs
 
     for (name, en) in ctx.createFieldEnums(p).pairs:
       if name in enumDefs:
         continue
       enumDefs.incl name
       ctx.symbols.incl nimIdentKey(en.name)
-      ctx.renderEnum(en)
+      chunk.enums.add en
 
     for (name, acc) in ctx.createAccessors(p).pairs:
       if name in accDefs:
         continue
       accDefs.incl name
-      ctx.renderProcDef(acc)
+      chunk.procs.add acc
 
     for (name, bfacc) in ctx.createBitfieldAccessors(p).pairs:
       if name in accDefs:
         continue
       accDefs.incl name
-      ctx.renderProcDef(bfacc)
+      chunk.procs.add bfacc
+
+    chunks.add chunk
+
+  for chunk in chunks:
+    ctx.renderDistinctTypes(chunk.distinctDefs)
+    for en in chunk.enums:
+      ctx.renderEnum(en)
+    for pr in chunk.procs:
+      ctx.renderProcDef(pr)
 
 proc renderDevice*(
     dev: SvdDevice,

@@ -130,9 +130,13 @@ func getEnumPrefix(enmDef: CodeGenEnumDef): string =
     else:
       "x"
 
-func createEnum*(
-    ctx: CodeGenContext, field: SvdField, regType: string, size: Natural = 0
+proc createEnum*(
+    ctx: var CodeGenContext, field: SvdField, regType: string, size: Natural = 0
 ): CodeGenEnumDef =
+  # Result memoized through context
+  if field.id in ctx.fieldEnums:
+    return ctx.fieldEnums[field.id]
+
   let svdEnum = field.enumValues.get
 
   var needsPrefix = false
@@ -165,9 +169,13 @@ func createEnum*(
   if size > 0:
     result.pragma = fmt"size: {size}"
 
-func createFieldEnums*(
-    ctx: CodeGenContext, periph: SvdPeripheral
-): OrderedTable[string, CodeGenEnumDef] =
+  # Store result in render context for future use when rendering accessors
+  # Use field ID as key so we can find the enum typedef for a given field object
+  ctx.fieldEnums[field.id] = result
+
+proc createFieldEnums*(
+    ctx: var CodeGenContext, periph: SvdPeripheral
+): seq[CodeGenEnumDef] =
   var regset: HashSet[string]
   for reg in periph.walkRegistersOnly:
     let typeName = ctx.typeMap[reg.id]
@@ -181,7 +189,7 @@ func createFieldEnums*(
         let
           props = reg.resolvedProperties
           en = ctx.createEnum(field, typeName, (props.size div 8))
-        result[en.name] = en
+        result.add en
 
 func createBitfieldTypes*(
     ctx: CodeGenContext, periph: SvdPeripheral
@@ -288,15 +296,16 @@ func createBitfieldAccessors*(
           .strip(leading = false)
         result[fmt"{setter.name}[{regValueType}, {valType}]"] = setter
 
-func getFieldDefaultVal(
-    ctx: CodeGenContext,
-    field: SvdField,
-    regTypeName: string,
-    regProps: ResolvedRegProperties,
+proc getFieldDefaultVal(
+    ctx: var CodeGenContext, reg: SvdRegisterTreeNode, field: SvdField
 ): string =
+  assert reg.kind == rnkRegister
+
   let
     fslice = field.lsb.int .. field.msb.int
-    numVal = regProps.resetValue.bitsliced(fslice)
+    numVal = reg.resolvedProperties.resetValue.bitsliced(fslice)
+    regTypeName = ctx.typeMap[reg.id]
+
   result =
     if field.enumValues.isSome:
       let enumObj = ctx.createEnum(field, regTypeName)
@@ -308,18 +317,23 @@ func getFieldDefaultVal(
     elif field.bitsize == 1:
       $(numVal > 0)
     else:
-      if numVal > (1 shl (regProps.size - 1) - 1):
-        $numVal & "." & intname(regProps.size)
+      let size = reg.resolvedProperties.size
+      if numVal > (1 shl (size - 1) - 1):
+        $numVal & "." & intname(size)
       else:
         $numVal
 
-func createFieldsWriter(
-    ctx: CodeGenContext, reg: SvdRegisterTreeNode, regTypeName, valType: string
+proc createFieldsWriter(
+    ctx: var CodeGenContext, reg: SvdRegisterTreeNode
 ): CodeGenProcDef =
   ## Create a `write` method that takes fields values as arguments for
   ## registers with fields.
   assert reg.kind == rnkRegister
-  let implType = intname reg.resolvedProperties.size
+  let
+    implType = intname reg.resolvedProperties.size
+    regTypeName = ctx.typeMap[reg.id]
+    valType = getRegValueType(reg, regTypeName)
+
   result = CodeGenProcDef(keyword: "proc", name: "write", public: true)
   result.args.add ("reg", regTypeName)
   result.body.add fmt"var x: {implType}" & "\n"
@@ -334,7 +348,7 @@ func createFieldsWriter(
           "." & implType
         else:
           ""
-      defValStr = ctx.getFieldDefaultVal(field, regTypeName, reg.resolvedProperties)
+      defValStr = ctx.getFieldDefaultVal(reg, field)
 
     if field.access.get(raReadWrite).isWritable:
       result.args.add CodeGenProcDefArg(
@@ -345,8 +359,8 @@ func createFieldsWriter(
 
   result.body.add fmt"reg.write x.{valType}"
 
-func createAccessors*(
-    ctx: CodeGenContext, periph: SvdPeripheral
+proc createAccessors*(
+    ctx: var CodeGenContext, periph: SvdPeripheral
 ): OrderedTable[string, CodeGenProcDef] =
   for reg in periph.walkRegistersOnly:
     let
@@ -390,7 +404,7 @@ func createAccessors*(
       result[fmt"write[{regTypeName}]"] = writer
 
       if reg.hasFields:
-        let fw = ctx.createFieldsWriter(reg, regTypeName, valType)
+        let fw = ctx.createFieldsWriter(reg)
         # fields writer proc would have exactly one argument if all fields are read-only
         # Only generate the fields writer if at least one field is writable
         if fw.args.len > 1:

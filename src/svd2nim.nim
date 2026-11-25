@@ -60,7 +60,7 @@ proc getVersion(): string {.compileTime.} =
     else:
       baseVersion
 
-proc main() =
+proc main() {.used.} =
   let help = """
   svd2nim - Generate Nim peripheral register APIs for ARM using CMSIS-SVD files.
 

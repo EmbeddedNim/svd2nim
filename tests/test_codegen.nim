@@ -4,9 +4,9 @@ import std/tables
 import std/sets
 import codegen/internal
 import svd2nim
-import utils
 import basetypes
 import transformations
+import ./utils_for_tests
 
 func toTable(s: seq[CodeGenTypeDef]): Table[string, CodeGenTypeDef] =
   for td in s:
@@ -64,10 +64,11 @@ suite "SAMD21 typedefs":
       samd21TypesNoPre["AC_Type"].members[0].name == "CTRLA"
 
   test "Create field enums":
+    let samd21enums = ctx.createFieldEnums(samd21.peripherals["GCLK".toSvdId])
+
     let
-      samd21enums = ctx.createFieldEnums(samd21.peripherals["GCLK".toSvdId])
-      idEnum = samd21enums["GCLK_CLKCTRL_ID"]
-      genEnum = samd21enums["GCLK_CLKCTRL_GEN"]
+      idEnum = samd21enums.findByName("GCLK_CLKCTRL_ID").get
+      genEnum = samd21enums.findByName("GCLK_CLKCTRL_GEN").get
 
     check:
       idEnum.fields.len == 36
@@ -119,7 +120,7 @@ suite "RP2040 enums":
   test "Enumerated values are sorted in increasing order":
     let
       rp2040enums = ctx.createFieldEnums(rp2040.peripherals["ROSC".toSvdId])
-      freqEnum = rp2040enums["ROSC_CTRL_FREQ_RANGE"]
+      freqEnum = rp2040enums.findByName("ROSC_CTRL_FREQ_RANGE").get
 
     check:
       freqEnum.fields.mapIt(it.val) == @[4004, 4005, 4006, 4007]

@@ -47,6 +47,7 @@ type CodeGenContext* = object
   typeMap*: Table[SvdId, string]
   dev*: SvdDevice
   output*: Stream
+  fieldEnums*: OrderedTable[SvdId, CodeGenEnumDef]
 
 proc initCodeGenContext*(
     dev: SvdDevice,

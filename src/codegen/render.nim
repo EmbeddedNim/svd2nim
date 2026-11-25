@@ -364,10 +364,10 @@ proc renderPeripheralRegAccessors(ctx: var CodeGenContext) =
       typedefs.add def
     chunk.distinctDefs = typedefs
 
-    for (name, en) in ctx.createFieldEnums(p).pairs:
-      if name in enumDefs:
+    for en in ctx.createFieldEnums(p):
+      if en.name in enumDefs:
         continue
-      enumDefs.incl name
+      enumDefs.incl en.name
       ctx.symbols.incl nimIdentKey(en.name)
       chunk.enums.add en
 

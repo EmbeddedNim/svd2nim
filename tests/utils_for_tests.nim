@@ -38,3 +38,8 @@ func findField*(dev: SvdDevice, id: SvdId): SvdField =
 
 func findField*(dev: SvdDevice, id: string): SvdField =
   dev.findField(id.toSvdId)
+
+func findByName*[T](elems: openArray[T], name: string): Option[T] =
+  for e in elems:
+    if e.name == name:
+      return some(e)

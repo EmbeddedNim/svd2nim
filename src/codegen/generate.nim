@@ -67,8 +67,36 @@ func createRegisterType(name: string): CodeGenTypeDef =
   result.public = true
   result.members.add TypeDefField(name: "loc", public: false, typeName: "uint")
 
+proc addTypeDefs(
+    ctx: CodeGenContext,
+    regNode: SvdRegisterTreeNode,
+    knownTypeDefs: var HashSet[string],
+    pdefs: var seq[CodeGenTypeDef],
+) =
+  ## Emit a type definition for `regNode` and recursively for every nested
+  ## cluster/register, appending to `pdefs`. Children are visited in reverse
+  ## address order so that, after `pdefs` is reversed by the caller, nested
+  ## types are declared before their parents. `knownTypeDefs` prevents
+  ## duplicate definitions across the whole device.
+  let tname = ctx.typeMap[regNode.id]
+  if tname in knownTypeDefs:
+    return
+  knownTypeDefs.incl tname
+
+  case regNode.kind
+  of rnkCluster:
+    pdefs.add CodeGenTypeDef(
+      name: tname, public: true, members: ctx.getObjectMembers(regNode)
+    )
+    # Children are pushed onto the stack in SVD order and popped in reverse,
+    # so traverse them in reverse order to keep the same DFS ordering.
+    for child in regNode.riterRegisters:
+      ctx.addTypeDefs(child, knownTypeDefs, pdefs)
+  of rnkRegister:
+    pdefs.add createRegisterType(tname)
+
 func createTypeDefs*(ctx: CodeGenContext): seq[CodeGenTypeDef] =
-  var knownTypeDefs: Hashset[string]
+  var knownTypeDefs: HashSet[string]
 
   for periph in ctx.dev.peripherals.values:
     let periphTypeName = ctx.typeMap[periph.id]
@@ -84,26 +112,8 @@ func createTypeDefs*(ctx: CodeGenContext): seq[CodeGenTypeDef] =
 
     # Can't use walkRegisters here in order to preserve correct ordering
     # Use DFS then reverse so that type dependency order is correct.
-    var regstack = toSeq(periph.iterRegisters)
-    while regstack.len > 0:
-      let
-        regNode = regstack.pop
-        tname = ctx.typeMap[regNode.id]
-
-      if tname in knownTypeDefs:
-        continue
-      else:
-        knownTypeDefs.incl tname
-
-      case regNode.kind
-      of rnkCluster:
-        pdefs.add CodeGenTypeDef(
-          name: tname, public: true, members: ctx.getObjectMembers(regNode)
-        )
-        for child in regNode.iterRegisters:
-          regstack.add child
-      of rnkRegister:
-        pdefs.add createRegisterType(tname)
+    for child in periph.riterRegisters:
+      ctx.addTypeDefs(child, knownTypeDefs, pdefs)
 
     for td in pdefs.ritems:
       result.add td

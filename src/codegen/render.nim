@@ -93,10 +93,7 @@ proc renderObjectMembers(
   when typeof(e) is SvdRegisterTreeNode:
     assert e.kind == rnkCluster
 
-  let children = block:
-    var c = toSeq e.iterRegisters
-    c.sort cmpAddrOffset
-    c
+  let children = sortedMembers(e)
 
   let locIndent = repeat(Indent, numIndent)
 

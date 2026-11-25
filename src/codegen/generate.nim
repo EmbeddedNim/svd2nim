@@ -34,6 +34,12 @@ func getRegisterPrefixSuffix(ctx: CodeGenContext, p: SvdPeripheral): (string, st
         ""
   return (regPrefix, regSuffix)
 
+func sortedMembers*(parent: SvdRegisterParent): seq[SvdRegisterTreeNode] =
+  ## Return the direct child register nodes of `parent`, ordered by
+  ## increasing address offset.
+  result = toSeq parent.iterRegisters
+  result.sort cmpAddrOffset
+
 func getObjectMemberName*(ctx: CodeGenContext, n: SvdRegisterTreeNode): string =
   case n.kind
   of rnkRegister:
@@ -50,12 +56,7 @@ func getObjectMemberName*(ctx: CodeGenContext, n: SvdRegisterTreeNode): string =
 func getObjectMembers[T: SvdRegisterParent](
     ctx: CodeGenContext, e: T
 ): seq[TypeDefField] =
-  let children = block:
-    var c = toSeq e.iterRegisters
-    c.sort cmpAddrOffset
-    c
-
-  for c in children:
+  for c in sortedMembers(e):
     let
       memberName = ctx.getObjectMemberName(c)
       memberType = ctx.getDimArrayTypeExpr(c)

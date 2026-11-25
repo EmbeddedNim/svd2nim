@@ -1,7 +1,7 @@
 import std/strformat
 
 # Package
-version     = "0.6.3"
+version     = "0.6.4"
 author      = "The svd2nim contributors"
 description = "Convert CMSIS ARM SVD files to nim register memory mappings"
 license     = "MIT"

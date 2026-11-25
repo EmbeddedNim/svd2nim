@@ -63,3 +63,8 @@ iterator ritems*[T](s: openArray[T]): T =
 
 proc warn*(msg: string) =
   stderr.writeLine "WARNING: " & msg
+
+
+func nimIdentKey*(s: string): string =
+  ## Normalize an identifier for Nim's case/underscore-insensitive equality.
+  s.toLowerAscii.replace("_", "")

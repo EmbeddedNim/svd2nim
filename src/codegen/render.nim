@@ -18,40 +18,46 @@ import ./generate
 
 const Indent = "  "
 
+template w(s: string): untyped =
+  mixin ctx
+  ctx.output.write s
+
+template wl(s: string): untyped =
+  mixin ctx
+  ctx.output.writeLine s
+
 proc renderNimImportExports(ctx: CodeGenContext) =
-  ctx.output.write(
-    "# Peripheral access API for $# microcontrollers (generated using svd2nim)\n\n" %
-      ctx.dev.metadata.name.toUpper()
-  )
-  ctx.output.writeLine("import std/volatile")
-  ctx.output.writeLine("import std/bitops")
-  ctx.output.writeLine("import uncheckedenums")
-  ctx.output.write("\n")
-  ctx.output.writeLine("export volatile")
-  ctx.output.writeLine("export uncheckedenums")
-  ctx.output.write("\n")
+  w "# Peripheral access API for $# microcontrollers (generated using svd2nim)\n\n" %
+    ctx.dev.metadata.name.toUpper()
+  wl "import std/volatile"
+  wl "import std/bitops"
+  wl "import uncheckedenums"
+  w "\n"
+  wl "export volatile"
+  wl "export uncheckedenums"
+  w "\n"
 
   # Supress name hints
-  ctx.output.write("{.hint[name]: off.}\n\n")
+  w "{.hint[name]: off.}\n\n"
 
   # Enable overloadable enums for nim v1.x
-  ctx.output.write:
+  w:
     """
     when NimMajor < 2:
       {.experimental: "overloadableEnums".}
     """.dedent.strip
-  ctx.output.write "\n\n"
+  w "\n\n"
 
 proc renderType(ctx: CodeGenContext, typ: CodeGenTypeDef) =
   let
     star = if typ.public: "*" else: ""
     typName = typ.name.sanitizeIdent
-  ctx.output.writeLine(fmt"type {typName}{star} = object")
+  wl fmt"type {typName}{star} = object"
   for f in typ.members:
     let
       fstar = if f.public: "*" else: ""
       fname = f.name.stripPlaceHolder.sanitizeIdent
-    ctx.output.writeLine(Indent & fmt"{fName}{fstar}: {f.typeName}")
+    wl Indent & fmt"{fName}{fstar}: {f.typeName}"
 
 proc renderRegister(
     ctx: CodeGenContext,
@@ -63,16 +69,16 @@ proc renderRegister(
   assert reg.kind == rnkRegister
 
   if reg.isDimArray:
-    ctx.output.write("[\n")
+    w "[\n"
     for arrIndex in 0 ..< (reg.dimGroup.dim.get):
       let address =
         baseAddress + reg.addressOffset + arrIndex * (reg.dimGroup.dimIncrement.get)
       let locIndent = repeat(Indent, numIndent + 1)
-      ctx.output.write(fmt"{locIndent}{typeName}(loc: {address:#x})," & "\n")
-    ctx.output.write(repeat(Indent, numIndent) & "],\n")
+      w fmt"{locIndent}{typeName}(loc: {address:#x})," & "\n"
+    w repeat(Indent, numIndent) & "],\n"
   else:
     let address = baseAddress + reg.addressOffset
-    ctx.output.write(fmt"{typeName}(loc: {address:#x}'u)," & "\n")
+    w fmt"{typeName}(loc: {address:#x}'u)," & "\n"
 
 proc renderCluster(
   ctx: CodeGenContext,
@@ -98,7 +104,7 @@ proc renderObjectMembers(
     let
       fName = ctx.getObjectMemberName(c)
       typeName = ctx.typeMap[c.id]
-    ctx.output.write(fmt"{locIndent}{fName}: ")
+    w fmt"{locIndent}{fName}: "
 
     case c.kind
     of rnkRegister:
@@ -119,20 +125,20 @@ proc renderCluster(
     # TODO: dim array of clusters has not been tested. Find or create SVD snippet
     # using this codepath to test.
     let locIndent = repeat(Indent, numIndent + 1)
-    ctx.output.write("[\n")
+    w "[\n"
     for arrIndex in 0 ..< (cluster.dimGroup.dim.get):
       let address =
         baseAddress + cluster.addressOffset +
         arrIndex * (cluster.dimGroup.dimIncrement.get)
-      ctx.output.write(fmt"{locIndent}{typeName}(" & "\n")
+      w fmt"{locIndent}{typeName}(" & "\n"
       ctx.renderObjectMembers(cluster, address, numIndent + 2)
-      ctx.output.write(locIndent & "),\n")
-    ctx.output.write(repeat(Indent, numIndent) & "],\n")
+      w locIndent & ",\n"
+    w repeat(Indent, numIndent) & "],\n"
   else:
     let address = baseAddress + cluster.addressOffset
-    ctx.output.write(fmt"{typeName}(" & "\n")
+    w fmt"{typeName}(" & "\n"
     ctx.renderObjectMembers(cluster, address, numIndent + 1)
-    ctx.output.write(repeat(Indent, numIndent) & "),\n")
+    w repeat(Indent, numIndent) & "),\n"
 
 proc renderPeripheral(ctx: CodeGenContext, periph: SvdPeripheral): string =
   let
@@ -142,17 +148,17 @@ proc renderPeripheral(ctx: CodeGenContext, periph: SvdPeripheral): string =
   if periph.isDimArray:
     # TODO: dim array of peripherals has not been tested. Find or create SVD snippet
     # using this codepath to test.
-    ctx.output.writeLine(fmt"const {insName}* = [")
+    wl fmt"const {insName}* = ["
     for arrIndex in 0 ..< (periph.dimGroup.dim.get):
       let address = periph.baseAddress + arrIndex * periph.dimGroup.dimIncrement.get
-      ctx.output.write(fmt"{Indent}{pTypeName}(" & "\n")
+      w fmt"{Indent}{pTypeName}(" & "\n"
       ctx.renderObjectMembers(periph, address, 2)
-      ctx.output.write(Indent & "),\n")
-    ctx.output.write(Indent & "],\n\n")
+      w Indent & "),\n"
+    w Indent & "],\n\n"
   else:
-    ctx.output.writeLine(fmt"const {insName}* = {pTypeName}(")
+    wl fmt"const {insName}* = {pTypeName}("
     ctx.renderObjectMembers(periph, periph.baseAddress, 1)
-    ctx.output.write(")\n\n")
+    w ")\n\n"
 
   result = insname
 
@@ -164,19 +170,19 @@ proc renderEnum(ctx: CodeGenContext, en: CodeGenEnumDef) =
         fmt" {{.{en.pragma}.}}"
       else:
         ""
-  ctx.output.writeLine(fmt"type {en.name}{star}{pragmaStr} = enum")
+  wl fmt"type {en.name}{star}{pragmaStr} = enum"
   for (k, v) in en.fields:
-    ctx.output.writeLine(fmt"{Indent}{k} = {v:#x},")
-  ctx.output.write "\n"
+    wl fmt"{Indent}{k} = {v:#x},"
+  w "\n"
 
 proc renderDistinctTypes(ctx: CodeGenContext, typedefs: seq[CodeGenDistinctDef]) =
   if typedefs.len == 0:
     return
-  ctx.output.writeLine "type"
+  wl "type"
   for def in typedefs:
     let star = if def.public: "*" else: ""
-    ctx.output.writeLine fmt"{Indent}{def.name}{star} = distinct {def.basetype}"
-  ctx.output.write("\n")
+    wl fmt"{Indent}{def.name}{star} = distinct {def.basetype}"
+  w "\n"
 
 proc renderProcDef(ctx: CodeGenContext, prd: CodeGenProcDef) =
   let
@@ -202,31 +208,31 @@ proc renderProcDef(ctx: CodeGenContext, prd: CodeGenProcDef) =
     argStringSeq.add fmt"{argObj.name}: {argObj.typ}{defValStr}"
   let argString = argStringSeq.join ", "
 
-  ctx.output.writeLine(fmt"{prd.keyword} {prd.name}{star}({argString}){retString}{pragmaStr} =")
+  wl fmt"{prd.keyword} {prd.name}{star}({argString}){retString}{pragmaStr} ="
   for line in prd.body.splitLines:
-    ctx.output.writeLine Indent & line
-  ctx.output.write "\n"
+    wl Indent & line
+  w "\n"
 
 func asSingleLine(s: string): string =
   s.splitLines.mapIt(it.strip).join(" ")
 
 proc renderHeader(ctx: CodeGenContext, text: string) =
-  ctx.output.write("\n")
-  ctx.output.write(repeat("#", 80))
-  ctx.output.write("\n")
-  ctx.output.write(text)
-  ctx.output.write("\n")
-  ctx.output.write(repeat("#", 80))
-  ctx.output.write("\n")
+  w "\n"
+  w repeat("#", 80)
+  w "\n"
+  w text
+  w "\n"
+  w repeat("#", 80)
+  w "\n"
 
 proc renderInterrupts(ctx: CodeGenContext) =
   renderHeader(ctx, "# Interrupt Number Definition")
-  ctx.output.writeLine("type IRQn* = enum")
+  wl "type IRQn* = enum"
   let
     cmExcHdr = "# #### CPU Core Exception Numbers "
     devIrqHdr = "# #### Device Peripheral Interrupts "
   template irqHeader(s: string) {.dirty.} =
-    ctx.output.writeLine(s & repeat("#", 80 - len(s)))
+    wl s & repeat("#", 80 - len(s))
 
   # CPU core interupts
   irqHeader cmExcHdr
@@ -235,10 +241,10 @@ proc renderInterrupts(ctx: CodeGenContext) =
     let coreInterrupts = CpuIrqTable[cpuKey]
     for cIrq in coreInterrupts:
       let desc = CpuIrqArray[cIrq].description
-      ctx.output.writeLine fmt"  {$cIrq:20} = {cIrq.int:4} # {desc}"
+      wl fmt"  {$cIrq:20} = {cIrq.int:4} # {desc}"
   else:
     # Unknown CPU and CPU-specific exceptions
-    ctx.output.writeLine "# Unknown CPU, svd2nim could not generate CPU exception numbers\n"
+    wl "# Unknown CPU, svd2nim could not generate CPU exception numbers\n"
 
   # Peripheral interrupts
   irqHeader devIrqHdr
@@ -250,7 +256,7 @@ proc renderInterrupts(ctx: CodeGenContext) =
     if i > 0 and iter.value == interrupts[i - 1].value:
       # Skip duplicated interrupts
       continue
-    ctx.output.writeLine fmt"  irq{iter.name:17} = {iter.value:4} # {iter.description.asSingleLine}"
+    wl fmt"  irq{iter.name:17} = {iter.value:4} # {iter.description.asSingleLine}"
 
 func convertCpuRevision(text: string): uint =
   # Based on:
@@ -269,7 +275,7 @@ func quoted(s: string): string =
 
 proc renderDeviceConsts(ctx: var CodeGenContext) =
   if not ctx.dev.cpu.isNil:
-    ctx.output.write("# Some information about this device.\n")
+    w "# Some information about this device.\n"
 
     let
       cpuNameSan = ctx.dev.cpu.name.replace(re2"(M\d+)\+", "$1PLUS").sanitizeIdent
@@ -284,7 +290,7 @@ proc renderDeviceConsts(ctx: var CodeGenContext) =
       }
 
     for (k, v) in cpuConsts:
-      ctx.output.writeLine fmt"const {k}* = {v}"
+      wl fmt"const {k}* = {v}"
       ctx.symbols.incl nimIdentKey(k)
 
 proc renderCoreModule(ctx: CodeGenContext, devFileName: string) =
@@ -322,7 +328,7 @@ proc renderPeripheralRegTypeDefs(ctx: var CodeGenContext) =
   for t in typeDefs:
     ctx.symbols.incl nimIdentKey(t.name)
     ctx.renderType(t)
-    ctx.output.writeLine("")
+    wl ""
 
 proc renderPeripheralInstances(ctx: var CodeGenContext) =
   renderHeader(ctx, "# Peripheral object instances")

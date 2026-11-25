@@ -294,7 +294,7 @@ proc renderDeviceConsts(ctx: var CodeGenContext) =
       ctx.symbols.incl nimIdentKey(k)
 
 proc renderCoreModule(ctx: CodeGenContext, devFileName: string) =
-  const coreBindings = {"core_cm0plus": staticRead("../core/core_cm0plus.nim")}
+  const coreBindings = {"core_cm0plus": staticRead("../../core/core_cm0plus.nim")}
   # TODO: core module for other CPUs
     .toTable
 
@@ -319,7 +319,7 @@ proc renderCoreModule(ctx: CodeGenContext, devFileName: string) =
 proc renderUncheckedenums(outFileName: string) =
   const
     modname = "uncheckedenums.nim"
-    contents = staticRead ".." / "utils" / modname
+    contents = staticRead "../../utils" / modname
   writeFile(joinPath(outFileName.parentDir, modname), contents)
 
 proc renderPeripheralRegTypeDefs(ctx: var CodeGenContext) =

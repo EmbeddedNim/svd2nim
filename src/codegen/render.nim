@@ -6,6 +6,7 @@ import std/tables
 import std/sets
 import std/options
 import std/os
+import std/streams
 import regex
 
 import ../basetypes
@@ -17,31 +18,31 @@ import ./generate
 
 const Indent = "  "
 
-proc renderNimImportExports(ctx: CodeGenContext, outf: File) =
-  outf.write(
+proc renderNimImportExports(ctx: CodeGenContext) =
+  ctx.output.write(
     "# Peripheral access API for $# microcontrollers (generated using svd2nim)\n\n" %
       ctx.dev.metadata.name.toUpper()
   )
-  outf.writeLine("import std/volatile")
-  outf.writeLine("import std/bitops")
-  outf.writeLine("import uncheckedenums")
-  outf.write("\n")
-  outf.writeLine("export volatile")
-  outf.writeLine("export uncheckedenums")
-  outf.write("\n")
+  ctx.output.writeLine("import std/volatile")
+  ctx.output.writeLine("import std/bitops")
+  ctx.output.writeLine("import uncheckedenums")
+  ctx.output.write("\n")
+  ctx.output.writeLine("export volatile")
+  ctx.output.writeLine("export uncheckedenums")
+  ctx.output.write("\n")
 
   # Supress name hints
-  outf.write("{.hint[name]: off.}\n\n")
+  ctx.output.write("{.hint[name]: off.}\n\n")
 
   # Enable overloadable enums for nim v1.x
-  outf.write:
+  ctx.output.write:
     """
     when NimMajor < 2:
       {.experimental: "overloadableEnums".}
     """.dedent.strip
-  outf.write "\n\n"
+  ctx.output.write "\n\n"
 
-proc renderType(typ: CodeGenTypeDef, tg: File) =
+proc renderType(typ: CodeGenTypeDef, tg: Stream) =
   let
     star = if typ.public: "*" else: ""
     typName = typ.name.sanitizeIdent
@@ -57,7 +58,7 @@ proc renderRegister(
     typeName: string,
     numIndent: Natural,
     baseAddress: Natural,
-    tg: File,
+    tg: Stream,
 ) =
   assert reg.kind == rnkRegister
 
@@ -78,15 +79,10 @@ proc renderCluster(
   cluster: SvdRegisterTreeNode,
   numIndent: Natural,
   baseAddress: Natural,
-  tg: File,
 )
 
 proc renderObjectMembers(
-    ctx: CodeGenContext,
-    e: SvdRegisterParent,
-    baseAddress: Natural,
-    numIndent: Natural,
-    tg: File,
+    ctx: CodeGenContext, e: SvdRegisterParent, baseAddress: Natural, numIndent: Natural
 ) =
   when typeof(e) is SvdRegisterTreeNode:
     assert e.kind == rnkCluster
@@ -102,20 +98,19 @@ proc renderObjectMembers(
     let
       fName = ctx.getObjectMemberName(c)
       typeName = ctx.typeMap[c.id]
-    tg.write(fmt"{locIndent}{fName}: ")
+    ctx.output.write(fmt"{locIndent}{fName}: ")
 
     case c.kind
     of rnkRegister:
-      renderRegister(c, typeName, numIndent, baseAddress, tg)
+      renderRegister(c, typeName, numIndent, baseAddress, ctx.output)
     of rnkCluster:
-      ctx.renderCluster(c, numIndent, baseAddress, tg)
+      ctx.renderCluster(c, numIndent, baseAddress)
 
 proc renderCluster(
     ctx: CodeGenContext,
     cluster: SvdRegisterTreeNode,
     numIndent: Natural,
     baseAddress: Natural,
-    tg: File,
 ) =
   assert cluster.kind == rnkCluster
   let typeName = ctx.typeMap[cluster.id]
@@ -124,22 +119,22 @@ proc renderCluster(
     # TODO: dim array of clusters has not been tested. Find or create SVD snippet
     # using this codepath to test.
     let locIndent = repeat(Indent, numIndent + 1)
-    tg.write("[\n")
+    ctx.output.write("[\n")
     for arrIndex in 0 ..< (cluster.dimGroup.dim.get):
       let address =
         baseAddress + cluster.addressOffset +
         arrIndex * (cluster.dimGroup.dimIncrement.get)
-      tg.write(fmt"{locIndent}{typeName}(" & "\n")
-      ctx.renderObjectMembers(cluster, address, numIndent + 2, tg)
-      tg.write(locIndent & "),\n")
-    tg.write(repeat(Indent, numIndent) & "],\n")
+      ctx.output.write(fmt"{locIndent}{typeName}(" & "\n")
+      ctx.renderObjectMembers(cluster, address, numIndent + 2)
+      ctx.output.write(locIndent & "),\n")
+    ctx.output.write(repeat(Indent, numIndent) & "],\n")
   else:
     let address = baseAddress + cluster.addressOffset
-    tg.write(fmt"{typeName}(" & "\n")
-    ctx.renderObjectMembers(cluster, address, numIndent + 1, tg)
-    tg.write(repeat(Indent, numIndent) & "),\n")
+    ctx.output.write(fmt"{typeName}(" & "\n")
+    ctx.renderObjectMembers(cluster, address, numIndent + 1)
+    ctx.output.write(repeat(Indent, numIndent) & "),\n")
 
-proc renderPeripheral(ctx: CodeGenContext, periph: SvdPeripheral, tg: File): string =
+proc renderPeripheral(ctx: CodeGenContext, periph: SvdPeripheral): string =
   let
     insName = periph.name.stripPlaceHolder.sanitizeIdent
     pTypeName = ctx.typeMap[periph.id]
@@ -147,21 +142,21 @@ proc renderPeripheral(ctx: CodeGenContext, periph: SvdPeripheral, tg: File): str
   if periph.isDimArray:
     # TODO: dim array of peripherals has not been tested. Find or create SVD snippet
     # using this codepath to test.
-    tg.writeLine(fmt"const {insName}* = [")
+    ctx.output.writeLine(fmt"const {insName}* = [")
     for arrIndex in 0 ..< (periph.dimGroup.dim.get):
       let address = periph.baseAddress + arrIndex * periph.dimGroup.dimIncrement.get
-      tg.write(fmt"{Indent}{pTypeName}(" & "\n")
-      ctx.renderObjectMembers(periph, address, 2, tg)
-      tg.write(Indent & "),\n")
-    tg.write(Indent & "],\n\n")
+      ctx.output.write(fmt"{Indent}{pTypeName}(" & "\n")
+      ctx.renderObjectMembers(periph, address, 2)
+      ctx.output.write(Indent & "),\n")
+    ctx.output.write(Indent & "],\n\n")
   else:
-    tg.writeLine(fmt"const {insName}* = {pTypeName}(")
-    ctx.renderObjectMembers(periph, periph.baseAddress, 1, tg)
-    tg.write(")\n\n")
+    ctx.output.writeLine(fmt"const {insName}* = {pTypeName}(")
+    ctx.renderObjectMembers(periph, periph.baseAddress, 1)
+    ctx.output.write(")\n\n")
 
   result = insname
 
-proc renderEnum(en: CodeGenEnumDef, tg: File) =
+proc renderEnum(en: CodeGenEnumDef, tg: Stream) =
   let
     star = if en.public: "*" else: ""
     pragmaStr =
@@ -174,7 +169,7 @@ proc renderEnum(en: CodeGenEnumDef, tg: File) =
     tg.writeLine(fmt"{Indent}{k} = {v:#x},")
   tg.write "\n"
 
-proc renderDistinctTypes(typedefs: seq[CodeGenDistinctDef], tg: File) =
+proc renderDistinctTypes(typedefs: seq[CodeGenDistinctDef], tg: Stream) =
   if typedefs.len == 0:
     return
   tg.writeLine "type"
@@ -183,7 +178,7 @@ proc renderDistinctTypes(typedefs: seq[CodeGenDistinctDef], tg: File) =
     tg.writeLine fmt"{Indent}{def.name}{star} = distinct {def.basetype}"
   tg.write("\n")
 
-proc renderProcDef(prd: CodeGenProcDef, tg: File) =
+proc renderProcDef(prd: CodeGenProcDef, tg: Stream) =
   let
     retString =
       if prd.retType.len > 0:
@@ -215,7 +210,7 @@ proc renderProcDef(prd: CodeGenProcDef, tg: File) =
 func asSingleLine(s: string): string =
   s.splitLines.mapIt(it.strip).join(" ")
 
-proc renderHeader(text: string, outf: File) =
+proc renderHeader(text: string, outf: Stream) =
   outf.write("\n")
   outf.write(repeat("#", 80))
   outf.write("\n")
@@ -224,14 +219,14 @@ proc renderHeader(text: string, outf: File) =
   outf.write(repeat("#", 80))
   outf.write("\n")
 
-proc renderInterrupts(ctx: CodeGenContext, outf: File) =
-  renderHeader("# Interrupt Number Definition", outf)
-  outf.writeLine("type IRQn* = enum")
+proc renderInterrupts(ctx: CodeGenContext) =
+  renderHeader("# Interrupt Number Definition", ctx.output)
+  ctx.output.writeLine("type IRQn* = enum")
   let
     cmExcHdr = "# #### CPU Core Exception Numbers "
     devIrqHdr = "# #### Device Peripheral Interrupts "
   template irqHeader(s: string) {.dirty.} =
-    outf.writeLine(s & repeat("#", 80 - len(s)))
+    ctx.output.writeLine(s & repeat("#", 80 - len(s)))
 
   # CPU core interupts
   irqHeader cmExcHdr
@@ -240,10 +235,10 @@ proc renderInterrupts(ctx: CodeGenContext, outf: File) =
     let coreInterrupts = CpuIrqTable[cpuKey]
     for cIrq in coreInterrupts:
       let desc = CpuIrqArray[cIrq].description
-      outf.writeLine fmt"  {$cIrq:20} = {cIrq.int:4} # {desc}"
+      ctx.output.writeLine fmt"  {$cIrq:20} = {cIrq.int:4} # {desc}"
   else:
     # Unknown CPU and CPU-specific exceptions
-    outf.writeLine "# Unknown CPU, svd2nim could not generate CPU exception numbers\n"
+    ctx.output.writeLine "# Unknown CPU, svd2nim could not generate CPU exception numbers\n"
 
   # Peripheral interrupts
   irqHeader devIrqHdr
@@ -255,7 +250,7 @@ proc renderInterrupts(ctx: CodeGenContext, outf: File) =
     if i > 0 and iter.value == interrupts[i - 1].value:
       # Skip duplicated interrupts
       continue
-    outf.writeLine fmt"  irq{iter.name:17} = {iter.value:4} # {iter.description.asSingleLine}"
+    ctx.output.writeLine fmt"  irq{iter.name:17} = {iter.value:4} # {iter.description.asSingleLine}"
 
 func convertCpuRevision(text: string): uint =
   # Based on:
@@ -272,9 +267,9 @@ func convertCpuRevision(text: string): uint =
 func quoted(s: string): string =
   '"' & s & '"'
 
-proc renderDeviceConsts(ctx: var CodeGenContext, outf: File) =
+proc renderDeviceConsts(ctx: var CodeGenContext) =
   if not ctx.dev.cpu.isNil:
-    outf.write("# Some information about this device.\n")
+    ctx.output.write("# Some information about this device.\n")
 
     let
       cpuNameSan = ctx.dev.cpu.name.replace(re2"(M\d+)\+", "$1PLUS").sanitizeIdent
@@ -289,7 +284,7 @@ proc renderDeviceConsts(ctx: var CodeGenContext, outf: File) =
       }
 
     for (k, v) in cpuConsts:
-      outf.writeLine fmt"const {k}* = {v}"
+      ctx.output.writeLine fmt"const {k}* = {v}"
       ctx.symbols.incl nimIdentKey(k)
 
 proc renderCoreModule(ctx: CodeGenContext, devFileName: string) =
@@ -321,23 +316,23 @@ proc renderUncheckedenums(outFileName: string) =
     contents = staticRead ".." / "utils" / modname
   writeFile(joinPath(outFileName.parentDir, modname), contents)
 
-proc renderPeripheralRegTypeDefs(ctx: var CodeGenContext, outf: File) =
-  renderHeader("# Type definitions for peripheral registers", outf)
+proc renderPeripheralRegTypeDefs(ctx: var CodeGenContext) =
+  renderHeader("# Type definitions for peripheral registers", ctx.output)
   let typeDefs = ctx.createTypeDefs()
   for t in typeDefs:
     ctx.symbols.incl nimIdentKey(t.name)
-    t.renderType(outf)
-    outf.writeLine("")
+    t.renderType(ctx.output)
+    ctx.output.writeLine("")
 
-proc renderPeripheralInstances(ctx: var CodeGenContext, outf: File) =
-  renderHeader("# Peripheral object instances", outf)
+proc renderPeripheralInstances(ctx: var CodeGenContext) =
+  renderHeader("# Peripheral object instances", ctx.output)
   for periph in ctx.dev.peripherals.values:
-    let constName = ctx.renderPeripheral(periph, outf)
+    let constName = ctx.renderPeripheral(periph)
     ctx.symbols.incl nimIdentKey(constName)
 
-proc renderPeripheralRegAccessors(ctx: var CodeGenContext, outf: File) =
+proc renderPeripheralRegAccessors(ctx: var CodeGenContext) =
   ## Use sets to deduplicate generated code types and procs
-  renderHeader("# Accessors for peripheral registers", outf)
+  renderHeader("# Accessors for peripheral registers", ctx.output)
   var
     fieldDistinctDefs: HashSet[string]
     enumDefs: HashSet[string]
@@ -351,26 +346,26 @@ proc renderPeripheralRegAccessors(ctx: var CodeGenContext, outf: File) =
       fieldDistinctDefs.incl name
       ctx.symbols.incl nimIdentKey(name)
       typedefs.add def
-    renderDistinctTypes(typedefs, outf)
+    renderDistinctTypes(typedefs, ctx.output)
 
     for (name, en) in ctx.createFieldEnums(p).pairs:
       if name in enumDefs:
         continue
       enumDefs.incl name
       ctx.symbols.incl nimIdentKey(en.name)
-      renderEnum(en, outf)
+      renderEnum(en, ctx.output)
 
     for (name, acc) in ctx.createAccessors(p).pairs:
       if name in accDefs:
         continue
       accDefs.incl name
-      renderProcDef(acc, outf)
+      renderProcDef(acc, ctx.output)
 
     for (name, bfacc) in ctx.createBitfieldAccessors(p).pairs:
       if name in accDefs:
         continue
       accDefs.incl name
-      renderProcDef(bfacc, outf)
+      renderProcDef(bfacc, ctx.output)
 
 proc renderDevice*(
     dev: SvdDevice,
@@ -381,19 +376,20 @@ proc renderDevice*(
   var ctx =
     initCodeGenContext(dev, ignoreAppend = ignoreAppend, ignorePrepend = ignorePrepend)
   let outFileName = dirPath / ctx.dev.metadata.name.toLower() & ".nim"
-  var outf = open(outFileName, fmWrite)
+  var stream = newFileStream(outFileName, fmWrite)
+  ctx.output = stream
   defer:
-    outf.close()
+    stream.close()
 
-  renderNimImportExports(ctx, outf)
+  renderNimImportExports(ctx)
 
-  ctx.renderDeviceConsts(outf)
-  renderInterrupts(ctx, outf)
+  ctx.renderDeviceConsts()
+  renderInterrupts(ctx)
   renderCoreModule(ctx, outFileName)
   renderUncheckedenums(outFileName)
 
   ctx.buildTypeMap()
 
-  ctx.renderPeripheralRegTypeDefs(outf)
-  ctx.renderPeripheralInstances(outf)
-  ctx.renderPeripheralRegAccessors(outf)
+  ctx.renderPeripheralRegTypeDefs()
+  ctx.renderPeripheralInstances()
+  ctx.renderPeripheralRegAccessors()

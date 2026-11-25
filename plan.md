@@ -68,26 +68,17 @@ export model, typemap, types, accessors, render, io
 
 Exit criteria: `nimble test` passes; import paths in `svd2nim.nim` and tests unchanged.
 
-## Phase 4 — Separate generation from I/O
+## Phase 4 — Separate generation from I/O (DONE)
 Files: `src/codegen/render.nim`, `src/codegen/model.nim`
 
-1. Signature style: every `render*` proc takes `ctx` as first arg (OOP/UFCS-friendly: `ctx.renderX(...)`). Mutating ones (`renderDeviceConsts`, `renderPeripheralReg*`) take `var ctx`; read-only ones take `ctx` by value.
-2. `render*` return `string` instead of writing to `File`. Pure generation; no hidden I/O.
-3. Add optional output support to context without baking I/O into generators:
-   ```nim
-    type CodeGenContext* = ref object
-      opts*: CodeGenOptions
-      symbols*: HashSet[string]
-      typeMap*: Table[SvdId, string]
-      dev*: SvdDevice
-     output*: Option[ref (proc(s: string))]  # optional writer
-   proc write*(ctx: CodeGenContext, s: string) = if ctx.output.isSome: ctx.output.get()(s)
-   ```
-   Generators may call `ctx.write(...)` for streaming, but default path uses returned strings.
-4. `render.nim` (`renderDevice`) owns all file writes: compose returned strings, write to disk; configure `ctx.output` only if streaming is desired.
-5. `renderCoreModule`/`renderUncheckedenums` return content; caller writes file.
+1. Add `out*: Stream` to `CodeGenContext` (default: file stream or string stream).
+   Import `std/streams`; render helpers write to `ctx.out` instead of a `File` param.
+2. Provide helpers `ctx.write(s)` and `ctx.writeLine(s)` (or use `ctx.out.write`/`writeLine` directly).
+3. Convert `render*` procs to use `ctx.out`; drop `tg: File` parameters.
+4. `renderDevice` accepts an optional output stream (or creates a file stream from `dirpath`), enabling stdout or `StringStream` for tests.
+5. Keep rendering as `proc` (side-effectful I/O); only extract pure string builders opportunistically.
 
-Exit criteria: output byte-identical; unit tests can assert on returned strings; no generator opens files.
+Exit criteria: output byte-identical; unit tests can capture output via StringStream.
 
 ## Phase 5 — Algorithm cleanup
 Files: `src/codegen/generate.nim`

@@ -1,6 +1,7 @@
 import std/tables
 import std/sets
 import std/options
+import std/streams
 
 import ../basetypes
 
@@ -45,11 +46,17 @@ type CodeGenContext* = object
   symbols*: HashSet[string]
   typeMap*: Table[SvdId, string]
   dev*: SvdDevice
+  output*: Stream
 
 proc initCodeGenContext*(
-    dev: SvdDevice, ignoreAppend: bool = false, ignorePrepend: bool = false
+    dev: SvdDevice,
+    ignoreAppend: bool = false,
+    ignorePrepend: bool = false,
+    output: Stream = nil,
 ): CodeGenContext =
-  CodeGenContext(dev: dev, ignoreAppend: ignoreAppend, ignorePrepend: ignorePrepend)
+  CodeGenContext(
+    dev: dev, ignoreAppend: ignoreAppend, ignorePrepend: ignorePrepend, output: output
+  )
 
 converter toCodeGenProcDefArg*(t: (string, string)): CodeGenProcDefArg =
   result = CodeGenProcDefArg(name: t[0], typ: t[1], defaultVal: string.none)

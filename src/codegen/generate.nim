@@ -10,33 +10,9 @@ import std/bitops
 import ../basetypes
 import ../utils
 import ./model
+import ./typemap
 
-const TypeSuffix = "_Type"
-
-func appendTypeName*(parentName: string, name: string): string =
-  if parentName.endsWith(TypeSuffix):
-    result = parentName[0 .. ^(TypeSuffix.len + 1)]
-  else:
-    result = parentName
-  result = result & "_" & name
-
-func buildTypeName*(p: SvdPeripheral): string =
-  if p.dimGroup.dimName.isSome:
-    result = p.dimGroup.dimName.get
-  elif p.headerStructName.isSome:
-    result = p.headerStructName.get
-  else:
-    result = p.baseName
-  result = result.sanitizeIdent & TypeSuffix
-
-func buildTypeName*(c: SvdRegisterTreeNode, parentTypeName: string): string =
-  if c.kind == rnkCluster and c.headerStructName.isSome:
-    result = c.headerStructName.get
-  else:
-    result = appendTypeName(parentTypeName, c.baseName)
-  result = result.sanitizeIdent & TypeSuffix
-
-func getDimArrayTypeExpr*[T: SomeSvdDimable](ctx: CodeGenContext, e: T): string =
+func getDimArrayTypeExpr[T: SomeSvdDimable](ctx: CodeGenContext, e: T): string =
   let typeName = ctx.typeMap[e.id]
   if e.isDimArray:
     let dim = e.dimGroup.dim.get
@@ -44,7 +20,7 @@ func getDimArrayTypeExpr*[T: SomeSvdDimable](ctx: CodeGenContext, e: T): string 
   else:
     typeName
 
-func getRegisterPrefixSuffix*(ctx: CodeGenContext, p: SvdPeripheral): (string, string) =
+func getRegisterPrefixSuffix(ctx: CodeGenContext, p: SvdPeripheral): (string, string) =
   let
     regPrefix =
       if not ctx.ignorePrepend:
@@ -71,7 +47,7 @@ func getObjectMemberName*(ctx: CodeGenContext, n: SvdRegisterTreeNode): string =
     result = n.name
   result = result.stripPlaceHolder.sanitizeIdent
 
-func getObjectMembers*[T: SvdRegisterParent](
+func getObjectMembers[T: SvdRegisterParent](
     ctx: CodeGenContext, e: T
 ): seq[TypeDefField] =
   let children = block:
@@ -86,26 +62,10 @@ func getObjectMembers*[T: SvdRegisterParent](
       def = TypeDefField(name: memberName, typeName: memberType, public: true)
     result.add def
 
-func createRegisterType*(name: string): CodeGenTypeDef =
+func createRegisterType(name: string): CodeGenTypeDef =
   result.name = name
   result.public = true
   result.members.add TypeDefField(name: "loc", public: false, typeName: "uint")
-
-func hasOwnType*(ctx: CodeGenContext, periph: SvdPeripheral): bool =
-  var basePeriph: SvdPeripheral = nil
-  if periph.typeBase.isSome:
-    basePeriph = ctx.dev.peripherals[periph.typeBase.get]
-
-  result =
-    periph.typeBase.isNone or (
-      (
-        periph.prependToName.isSome and periph.prependToName != basePeriph.prependToName and
-        not ctx.ignorePrepend
-      ) or (
-        periph.appendToName.isSome and periph.appendToName != basePeriph.appendToName and
-        not ctx.ignoreAppend
-      )
-    )
 
 func createTypeDefs*(ctx: CodeGenContext): seq[CodeGenTypeDef] =
   var knownTypeDefs: Hashset[string]
@@ -148,21 +108,7 @@ func createTypeDefs*(ctx: CodeGenContext): seq[CodeGenTypeDef] =
     for td in pdefs.ritems:
       result.add td
 
-func hasFields*(r: SvdRegisterTreeNode): bool =
-  # If defines a single field of the same size as the register, then
-  # consider that there is no field.
-  assert r.kind == rnkRegister
-  result =
-    r.fields.len > 0 and
-    not (r.fields.len == 1 and r.fields[0].bitsize == r.resolvedProperties.size)
-
-func getEnumTypeName*(enm: SvdFieldEnum, fieldName: string, regType: string): string =
-  if enm.headerEnumName.isSome:
-    enm.headerEnumName.get
-  else:
-    appendTypeName(regType, fieldName)
-
-func getEnumPrefix*(enmDef: CodeGenEnumDef): string =
+func getEnumPrefix(enmDef: CodeGenEnumDef): string =
   var lastPart = enmDef.name.split("_")[^1]
   while lastPart.len > 0 and lastPart[0] notin Letters:
     lastPart = lastPart[1 .. lastPart.high]
@@ -208,13 +154,6 @@ func createEnum*(
   if size > 0:
     result.pragma = fmt"size: {size}"
 
-func hasSingletonField*(reg: SvdRegisterTreeNode): bool =
-  ## Check if register has single field that is the same size as
-  ## the register.
-  if reg.kind != rnkRegister:
-    return false
-  result = reg.fields.len == 1 and reg.fields[0].bitsize == reg.resolvedProperties.size
-
 func createFieldEnums*(
     ctx: CodeGenContext, periph: SvdPeripheral
 ): OrderedTable[string, CodeGenEnumDef] =
@@ -232,18 +171,6 @@ func createFieldEnums*(
           props = reg.resolvedProperties
           en = ctx.createEnum(field, typeName, (props.size div 8))
         result[en.name] = en
-
-func intname*(size: Natural): string =
-  "uint" & $size
-
-func getRegValueType*(reg: SvdRegisterTreeNode, typeName: string): string =
-  assert reg.kind == rnkRegister
-  if reg.hasFields:
-    typeName.appendTypeName("Fields")
-  elif reg.hasSingletonField and reg.fields[0].enumValues.isSome:
-    getEnumTypeName(reg.fields[0].enumValues.get, reg.fields[0].name, typeName)
-  else:
-    intname reg.resolvedProperties.size
 
 func createBitfieldTypes*(
     ctx: CodeGenContext, periph: SvdPeripheral
@@ -263,7 +190,7 @@ func createBitfieldTypes*(
           name: fieldTypeName, public: true, basetype: intname props.size
         )
 
-func getFieldType*(field: SvdField, regTypeName, implType: string): string =
+func getFieldType(field: SvdField, regTypeName, implType: string): string =
   # Type of a field is either a bool (if 1-bit length), an Enum type if
   # one is defined, otherwise a plain uint.
   if field.enumValues.isSome:
@@ -350,7 +277,7 @@ func createBitfieldAccessors*(
           .strip(leading = false)
         result[fmt"{setter.name}[{regValueType}, {valType}]"] = setter
 
-func getFieldDefaultVal*(
+func getFieldDefaultVal(
     ctx: CodeGenContext,
     field: SvdField,
     regTypeName: string,
@@ -375,7 +302,7 @@ func getFieldDefaultVal*(
       else:
         $numVal
 
-func createFieldsWriter*(
+func createFieldsWriter(
     ctx: CodeGenContext, reg: SvdRegisterTreeNode, regTypeName, valType: string
 ): CodeGenProcDef =
   ## Create a `write` method that takes fields values as arguments for

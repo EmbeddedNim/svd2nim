@@ -13,7 +13,7 @@ import docopt
 import ./basetypes
 import ./svdparser
 import ./transformations
-import ./codegen
+import codegen/public
 import ./utils
 
 proc warnNotImplemented(dev: SvdDevice) =
@@ -79,28 +79,29 @@ proc main() =
   let args = docopt(help, version = getVersion())
   # for (k, v) in args.pairs: echo fmt"{k}: {v}" # Dump args for debugging
   # Get Parameters
-  if args.contains("<SvdFile>"):
-    let
-      dev = processSvd($args["<SvdFile>"])
-      outDirName =
-        if args["-o"]:
-          $args["-o"]
-        else:
-          getCurrentDir()
 
-    if not dirExists(outDirName):
-      stderr.writeLine "ERROR: Output directory does not exist."
-      quit(1)
-
-    var ctx = initCodeGenContext(
-      dev,
-      ignoreAppend = bool(args["--ignore-append"]),
-      ignorePrepend = bool(args["--ignore-prepend"]),
-    )
-    ctx.renderDevice(outDirName)
-  else:
+  if not args.contains("<SvdFile>"):
     stderr.writeLine "Try: svd2nim -h"
     quit(1)
+
+  let
+    dev = processSvd($args["<SvdFile>"])
+    outDirName =
+      if args["-o"]:
+        $args["-o"]
+      else:
+        getCurrentDir()
+
+  if not dirExists(outDirName):
+    stderr.writeLine "ERROR: Output directory does not exist."
+    quit(1)
+
+  renderDevice(
+    dev,
+    outDirName,
+    ignoreAppend = bool(args["--ignore-append"]),
+    ignorePrepend = bool(args["--ignore-prepend"]),
+  )
 
 when isMainModule:
   main()

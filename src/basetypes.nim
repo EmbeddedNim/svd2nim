@@ -255,3 +255,18 @@ func child*(p: SvdRegisterParent, id: SvdId): SvdRegisterTreeNode =
 
 func bitsize*(f: SvdField): Natural =
   f.msb - f.lsb + 1
+
+func hasFields*(r: SvdRegisterTreeNode): bool =
+  # If defines a single field of the same size as the register, then
+  # consider that there is no field.
+  assert r.kind == rnkRegister
+  result =
+    r.fields.len > 0 and
+    not (r.fields.len == 1 and r.fields[0].bitsize == r.resolvedProperties.size)
+
+func hasSingletonField*(reg: SvdRegisterTreeNode): bool =
+  ## Check if register has single field that is the same size as
+  ## the register.
+  if reg.kind != rnkRegister:
+    return false
+  result = reg.fields.len == 1 and reg.fields[0].bitsize == reg.resolvedProperties.size

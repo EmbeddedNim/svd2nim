@@ -12,6 +12,7 @@ import ../basetypes
 import ../utils
 import ../cpuirq
 import ./model
+import ./typemap
 import ./generate
 
 const Indent = "  "
@@ -371,7 +372,8 @@ proc renderPeripheralRegAccessors(ctx: var CodeGenContext, outf: File) =
       accDefs.incl name
       renderProcDef(bfacc, outf)
 
-proc renderDevice*(ctx: var CodeGenContext, dirpath: string) =
+proc renderDevice*(dev: SvdDevice, dirpath: string, ignoreAppend: bool = false, ignorePrepend: bool = false) =
+  var ctx = initCodeGenContext(dev, ignoreAppend=ignoreAppend, ignorePrepend=ignorePrepend)
   let outFileName = dirPath / ctx.dev.metadata.name.toLower() & ".nim"
   var outf = open(outFileName, fmWrite)
   defer:

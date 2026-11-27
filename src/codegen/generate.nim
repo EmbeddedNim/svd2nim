@@ -131,10 +131,15 @@ func getEnumPrefix(enmDef: CodeGenEnumDef): string =
       "x"
 
 proc createEnum*(
-    ctx: var CodeGenContext, field: SvdField, regType: string, size: Natural = 0
+    ctx: var CodeGenContext, field: SvdField, regType: string, size: Natural = 0,
+    useWriteEnum: bool = false
 ): CodeGenEnumDef =
   # Result memoized through context
-  let svdEnum = field.enumValues.get
+  let svdEnum =
+    if useWriteEnum and field.writeEnumValues.isSome:
+      field.writeEnumValues.get
+    else:
+      field.enumValues.get
   if svdEnum.id in ctx.fieldEnums:
     return ctx.fieldEnums[svdEnum.id]
 
@@ -188,13 +193,20 @@ proc createFieldEnums*(
     for field in reg.fields:
       if field.enumValues.isSome:
         let svdEnum = field.enumValues.get
-        if svdEnum.id in seenEnums:
-          continue
-        seenEnums.incl svdEnum.id
-        let
-          props = reg.resolvedProperties
-          en = ctx.createEnum(field, typeName, (props.size div 8))
-        result.add en
+        if svdEnum.id notin seenEnums and svdEnum.id notin ctx.fieldEnums:
+          seenEnums.incl svdEnum.id
+          let
+            props = reg.resolvedProperties
+            en = ctx.createEnum(field, typeName, (props.size div 8))
+          result.add en
+      if field.writeEnumValues.isSome:
+        let svdEnum = field.writeEnumValues.get
+        if svdEnum.id notin seenEnums and svdEnum.id notin ctx.fieldEnums:
+          seenEnums.incl svdEnum.id
+          let
+            props = reg.resolvedProperties
+            en = ctx.createEnum(field, typeName, (props.size div 8), useWriteEnum = true)
+          result.add en
 
 func createBitfieldTypes*(
     ctx: CodeGenContext, periph: SvdPeripheral
@@ -214,11 +226,16 @@ func createBitfieldTypes*(
           name: fieldTypeName, public: true, basetype: intname props.size
         )
 
-func getFieldType(field: SvdField, regTypeName, implType: string): string =
+func getFieldType(field: SvdField, regTypeName, implType: string, useWriteEnum: bool = false): string =
   # Type of a field is either a bool (if 1-bit length), an Enum type if
   # one is defined, otherwise a plain uint.
-  if field.enumValues.isSome:
-    getEnumTypeName(field, regTypeName)
+  let hasEnum =
+    if useWriteEnum:
+      field.writeEnumValues.isSome or field.enumValues.isSome
+    else:
+      field.enumValues.isSome
+  if hasEnum:
+    getEnumTypeName(field, regTypeName, useWriteEnum)
   elif field.bitsize == 1:
     "bool"
   else:
@@ -239,16 +256,22 @@ func createBitfieldAccessors*(
 
     for field in reg.fields:
       let
-        hasEnum = field.enumValues.isSome
+        hasReadEnum = field.enumValues.isSome
+        hasWriteEnum = field.writeEnumValues.isSome or field.enumValues.isSome
         access = field.access.get(props.access)
         lsb = field.lsb
         msb = field.msb
-        valType = getFieldType(field, regTypeName, implType)
-        getterValType =
-          if hasEnum:
-            fmt"UncheckedEnum[{valType}]"
+        readValType = getFieldType(field, regTypeName, implType)
+        writeValType =
+          if field.writeEnumValues.isSome:
+            getFieldType(field, regTypeName, implType, useWriteEnum = true)
           else:
-            valType
+            readValType
+        getterValType =
+          if hasReadEnum:
+            fmt"UncheckedEnum[{readValType}]"
+          else:
+            readValType
 
       let getterName = block:
         var n = field.name.sanitizeIdent
@@ -270,9 +293,9 @@ func createBitfieldAccessors*(
           pragma: @["inline"],
           body: fmt"r.{implType}.bitsliced({lsb} .. {msb})",
         )
-        if hasEnum:
-          getter.body = fmt"toUncheckedEnum[{valType}]({getter.body}.int)"
-        elif valType != implType:
+        if hasReadEnum:
+          getter.body = fmt"toUncheckedEnum[{readValType}]({getter.body}.int)"
+        elif readValType != implType:
           getter.body &= ("." & getterValType)
 
         result[fmt"{getter.name}[{regValueType}]"] = getter
@@ -282,12 +305,12 @@ func createBitfieldAccessors*(
           keyword: "proc",
           name: fmt"`{getterName}=`",
           public: true,
-          args: @[("r", "var " & regValueType), ("val", valType)],
+          args: @[("r", "var " & regValueType), ("val", writeValType)],
           pragma: @["inline"],
           body: fmt"r.{implType}.bitsliced({lsb} .. {msb})",
         )
         let valconv =
-          if valType != implType:
+          if writeValType != implType:
             "." & implType
           else:
             ""
@@ -299,7 +322,7 @@ func createBitfieldAccessors*(
         """
           .dedent()
           .strip(leading = false)
-        result[fmt"{setter.name}[{regValueType}, {valType}]"] = setter
+        result[fmt"{setter.name}[{regValueType}, {writeValType}]"] = setter
 
 proc getFieldDefaultVal(
     ctx: var CodeGenContext, reg: SvdRegisterTreeNode, field: SvdField

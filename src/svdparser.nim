@@ -199,12 +199,25 @@ proc parseField(fNode: XmlNode, parentId: SvdId): SvdField =
     )
 
   let enumValuesNodes = fNode.findAll("enumeratedValues")
-  if enumValuesNodes.len > 0:
-    result.enumValues = some parseFieldEnum(enumValuesNodes[0], result.id)
-  else:
-    result.enumValues = none SvdFieldEnum
-  if enumValuesNodes.len > 1:
-    warn fmt"Multiple enumeratedValues in field '{result.name}', only the first entry will be used"
+  result.enumValues = none SvdFieldEnum
+  result.writeEnumValues = none SvdFieldEnum
+  for node in enumValuesNodes:
+    let ev = parseFieldEnum(node, result.id)
+    let usage = node.getChildTextOpt("usage")
+    let isWrite =
+      usage.isSome and usage.get.strip.toLowerAscii == "write"
+    if isWrite:
+      if result.writeEnumValues.isNone:
+        result.writeEnumValues = some ev
+    else:
+      # read or read-write (or unspecified): primary/read enum
+      if result.enumValues.isNone:
+        result.enumValues = some ev
+  # Fall back so write-only fields still have a primary enum for codegen.
+  if result.enumValues.isNone and result.writeEnumValues.isSome:
+    result.enumValues = result.writeEnumValues
+  if enumValuesNodes.len > 2:
+    warn fmt"Multiple enumeratedValues in field '{result.name}', only read/write entries will be used"
 
   result.dimGroup = fNode.parseDimElementGroup()
 

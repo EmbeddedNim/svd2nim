@@ -42,6 +42,7 @@ type SvdField* = ref object
   lsb*: Natural
   msb*: Natural
   enumValues*: Option[SvdFieldEnum]
+  writeEnumValues*: Option[SvdFieldEnum]
   dimGroup*: SvdDimElementGroup
   access*: Option[SvdRegisterAccess]
 

@@ -84,9 +84,12 @@ func buildTypeMap*(ctx: var CodeGenContext) =
 func intname*(size: Natural): string =
   "uint" & $size
 
-func getEnumTypeName*(field: SvdField, regType: string): string =
-  assert field.enumValues.isSome
-  let enm = field.enumValues.get
+func getEnumTypeName*(field: SvdField, regType: string, useWriteEnum: bool = false): string =
+  let enm =
+    if useWriteEnum and field.writeEnumValues.isSome:
+      field.writeEnumValues.get
+    else:
+      field.enumValues.get
   if enm.headerEnumName.isSome:
     enm.headerEnumName.get
   else:

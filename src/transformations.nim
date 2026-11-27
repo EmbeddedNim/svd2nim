@@ -168,10 +168,8 @@ proc deriveEnum(
     candIdParts[first .. candIdParts.high] == derFromParts
 
   if candidates.len == 1:
-    # Found it
     base = candidates[0]
   elif candidates.len > 1:
-    # If we have multiple matches, choose one from the same parent register, if possible.
     let sameRegister = candidates.filterIt:
       it.id.parent.parent == registerId
     if sameRegister.len == 1:
@@ -196,10 +194,15 @@ proc deriveEnums(dev: var SvdDevice) =
   for per in dev.peripherals.values:
     for reg in per.walkRegistersOnly:
       for field in reg.fields:
-        if field.enumValues.isSome:
-          let ev = field.enumValues.get
-          if ev.name.isSome and ev.name.get.len > 0 and ev.derivedFrom.isNone:
-            enumIndex.mgetOrPut(ev.name.get(), @[]).add ev
+        var seenIds: seq[SvdId]
+        for ev in [field.enumValues, field.writeEnumValues]:
+          if ev.isSome:
+            let e = ev.get
+            if e.id in seenIds:
+              continue
+            seenIds.add e.id
+            if e.name.isSome and e.name.get.len > 0 and e.derivedFrom.isNone:
+              enumIndex.mgetOrPut(e.name.get(), @[]).add e
 
   # Traverse all fields again, this time derive enums
   for per in dev.peripherals.values:
@@ -209,6 +212,10 @@ proc deriveEnums(dev: var SvdDevice) =
             field.enumValues.get.derivedFrom.get.len > 0:
           field.enumValues =
             deriveEnum(enumIndex, field.id, field.enumValues.get.derivedFrom.get)
+        if field.writeEnumValues.isSome and field.writeEnumValues.get.derivedFrom.isSome and
+            field.writeEnumValues.get.derivedFrom.get.len > 0:
+          field.writeEnumValues =
+            deriveEnum(enumIndex, field.id, field.writeEnumValues.get.derivedFrom.get)
 
 proc deriveAll*(dev: var SvdDevice) =
   # Derive deepest entities first

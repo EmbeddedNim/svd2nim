@@ -134,14 +134,13 @@ proc createEnum*(
     ctx: var CodeGenContext, field: SvdField, regType: string, size: Natural = 0
 ): CodeGenEnumDef =
   # Result memoized through context
-  if field.id in ctx.fieldEnums:
-    return ctx.fieldEnums[field.id]
-
   let svdEnum = field.enumValues.get
+  if svdEnum.id in ctx.fieldEnums:
+    return ctx.fieldEnums[svdEnum.id]
 
   var needsPrefix = false
   result.public = true
-  result.name = getEnumTypeName(svdEnum, field.name, regType)
+  result.name = getEnumTypeName(field, regType)
   for (k, v) in svdEnum.values:
     let cgKey = k.sanitizeIdent
     result.fields.add (cgKey, v)
@@ -170,13 +169,15 @@ proc createEnum*(
     result.pragma = fmt"size: {size}"
 
   # Store result in render context for future use when rendering accessors
-  # Use field ID as key so we can find the enum typedef for a given field object
-  ctx.fieldEnums[field.id] = result
+  # Key by the SVD enum id so derived fields sharing a base enum reuse it.
+  ctx.fieldEnums[svdEnum.id] = result
 
 proc createFieldEnums*(
     ctx: var CodeGenContext, periph: SvdPeripheral
 ): seq[CodeGenEnumDef] =
-  var regset: HashSet[string]
+  var
+    regset: HashSet[string]
+    seenEnums: HashSet[SvdId]
   for reg in periph.walkRegistersOnly:
     let typeName = ctx.typeMap[reg.id]
     if typeName in regset:
@@ -186,6 +187,10 @@ proc createFieldEnums*(
 
     for field in reg.fields:
       if field.enumValues.isSome:
+        let svdEnum = field.enumValues.get
+        if svdEnum.id in seenEnums:
+          continue
+        seenEnums.incl svdEnum.id
         let
           props = reg.resolvedProperties
           en = ctx.createEnum(field, typeName, (props.size div 8))
@@ -213,7 +218,7 @@ func getFieldType(field: SvdField, regTypeName, implType: string): string =
   # Type of a field is either a bool (if 1-bit length), an Enum type if
   # one is defined, otherwise a plain uint.
   if field.enumValues.isSome:
-    getEnumTypeName(field.enumValues.get, field.name, regTypeName)
+    getEnumTypeName(field, regTypeName)
   elif field.bitsize == 1:
     "bool"
   else:

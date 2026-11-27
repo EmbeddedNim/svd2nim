@@ -134,7 +134,12 @@ proc main() =
         continue
       if readFile(generated) != readFile(golden):
         echo "DIFF: ", modName
-        let (diffOut, _) = execCmdEx("diff -u " & golden & " " & generated)
+        let diffCmd =
+          if findExe("diff") != "":
+            "diff -u " & golden & " " & generated
+          else:
+            "git diff --no-index -- " & golden & " " & generated
+        let (diffOut, _) = execCmdEx(diffCmd)
         echo diffOut
         failed = true
       else:

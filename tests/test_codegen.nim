@@ -105,7 +105,7 @@ suite "Misc codegen tests":
     ctx.symbols.incl nimIdentKey("FLASH")
 
     var field = SvdField(
-      name: "X", enumValues: some SvdFieldEnum(values: @[("Flash", 0), ("Other", 1)])
+      name: "X", enumValues: some SvdFieldEnum(id: "T.X".toSvdId, values: @[("Flash", 0), ("Other", 1)])
     )
     let cg = ctx.createEnum(field, "T")
     check:
@@ -124,3 +124,32 @@ suite "RP2040 enums":
 
     check:
       freqEnum.fields.mapIt(it.val) == @[4004, 4005, 4006, 4007]
+
+suite "Derived enum codegen":
+  setup:
+    let stm32f429 {.used.} = processSvd("./tests/stm32f429.svd")
+    var ctx {.used.} = initCodeGenContext(stm32f429)
+    ctx.buildTypeMap()
+
+  test "createFieldEnums deduplicates derived enums":
+    let enums = ctx.createFieldEnums(stm32f429.peripherals["GPIOK".toSvdId])
+    check:
+      enums.findByName("GPIOK_MODER_MODER0").isSome
+      enums.findByName("GPIOK_MODER_MODER1").isNone
+      enums.findByName("GPIOK_MODER_MODER15").isNone
+
+  test "getEnumTypeName uses base field name":
+    var field = SvdField(
+      name: "MODER1",
+      enumValues: some SvdFieldEnum(id: "GPIOK.MODER.MODER0.MODER0".toSvdId)
+    )
+    check:
+      getEnumTypeName(field, "GPIOK_MODER_Type") == "GPIOK_MODER_MODER0"
+
+  test "getEnumTypeName honors headerEnumName":
+    var field = SvdField(
+      name: "X",
+      enumValues: some SvdFieldEnum(id: "R.X".toSvdId, headerEnumName: some "CustomEnum")
+    )
+    check:
+      getEnumTypeName(field, "R_Type") == "CustomEnum"

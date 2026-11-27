@@ -123,3 +123,38 @@ suite "Dim index expansion":
       "BTR2" in names
       "BTR3" in names
       "BTR4" in names
+
+suite "Derived enum reuse":
+  setup:
+    let
+      esp32 {.used.} = readAndTransformSvd("./tests/esp32.svd", true, true)
+      stm32f429 {.used.} = readAndTransformSvd("./tests/stm32f429.svd", true, true)
+
+  test "derived field reuses base enum":
+    let
+      timg0 = esp32.peripherals["TIMG0".toSvdId]
+      wdtcfg0 = timg0.findRegister("WDTCONFIG0")
+      base = wdtcfg0.findField("WDT_STG3")
+      derived = wdtcfg0.findField("WDT_STG2")
+
+    check:
+      derived.enumValues.isSome
+      derived.enumValues.get.id == base.enumValues.get.id
+
+  test "unqualified derivedFrom resolves in same register":
+    let
+      moder0 = stm32f429.findField("GPIOK.MODER.MODER0")
+      moder1 = stm32f429.findField("GPIOK.MODER.MODER1")
+
+    check:
+      moder1.enumValues.isSome
+      moder1.enumValues.get.id == moder0.enumValues.get.id
+
+  test "derived peripheral reuses base enum":
+    let
+      base = stm32f429.findField("GPIOK.MODER.MODER0")
+      derived = stm32f429.findField("GPIOJ.MODER.MODER1")
+
+    check:
+      derived.enumValues.isSome
+      derived.enumValues.get.id == base.enumValues.get.id

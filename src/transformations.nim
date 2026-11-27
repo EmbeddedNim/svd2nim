@@ -47,17 +47,13 @@ func parseDimIndices*(dim: Natural, dimIndex: Option[string]): seq[string] =
     for i in 0 ..< dim:
       result.add $i
 
-func copyEnum(en: SvdFieldEnum, newParent: SvdId): SvdFieldEnum =
-  new result
-  result[] = en[]
-  result.id = newParent / en.id.name
-
 func copyField(field: SvdField, newParent: SvdId): SvdField =
   new result
   result[] = field[]
   result.id = newParent / field.id.name
-  if result.enumValues.isSome:
-    result.enumValues = some result.enumValues.get.copyEnum(result.id)
+  # Note: we don't copy the EnumeratedValue object, reuse the same enum ref so
+  # derived registers/peripherals share the base enum type instead of generating
+  # duplicate identical types.
 
 func copySubtree(node: SvdRegisterTreeNode, newParent: SvdId): SvdRegisterTreeNode =
   new result
@@ -154,29 +150,44 @@ proc derivePeripherals(dev: var SvdDevice) =
 proc deriveEnum(
     index: TableRef[string, seq[SvdFieldEnum]], parentId: SvdId, derivedFrom: string
 ): Option[SvdFieldEnum] =
+  if derivedFrom.len < 1:
+    warn fmt"""Empty derivedFrom value in enumeratedValues of field {$parentId}. Ignoring this enumeratedValues entry."""
+    return none(SvdFieldEnum)
+
   var base: SvdFieldEnum = nil
+
   let
     derFromParts = derivedFrom.strip.split('.')
-    candidates = index[derFromParts[^1]]
+    registerId = parentId.parent
 
-  for cand in candidates:
-    let
-      candIdParts = cand.id.split
-      first = candIdParts.len - min(derFromParts.len, candIdParts.len)
-    if candIdParts[first .. candIdParts.high] == derFromParts:
-      if not base.isNil:
-        warn fmt"""Ambiguous derivedFrom "{derivedFrom}" in enumeratedValues of field {$parentId}. Ignoring this enumeratedValues entry."""
-        return none(SvdFieldEnum)
-      base = cand
+  let candidates = index.getOrDefault(derFromParts[^1], @[]).filterIt:
+    # Check if if the last N parts of the ID match with derivedFrom, where N is the length
+    # the derivedFrom ID.
+    let candIdParts = it.id.split
+    let first = candIdParts.len - min(derFromParts.len, candIdParts.len)
+    candIdParts[first .. candIdParts.high] == derFromParts
 
-  if base.isNil:
+  if candidates.len == 1:
+    # Found it
+    base = candidates[0]
+  elif candidates.len > 1:
+    # If we have multiple matches, choose one from the same parent register, if possible.
+    let sameRegister = candidates.filterIt:
+      it.id.parent.parent == registerId
+    if sameRegister.len == 1:
+      base = sameRegister[0]
+    else:
+      warn fmt"""Ambiguous derivedFrom "{derivedFrom}" in enumeratedValues of field {$parentId}. Ignoring this enumeratedValues entry."""
+      return none(SvdFieldEnum)
+  elif candidates.len == 0:
     warn fmt"""derivedFrom "{derivedFrom}" in enumeratedValues of field {$parentId} was not found. Ignoring this enumeratedValues entry."""
     return none(SvdFieldEnum)
 
-  var resultObj = new SvdFieldEnum
-  resultObj[] = base[]
-  resultObj.id = parentId / base.id.name
-  result = some resultObj
+  assert not base.isNil
+
+  # SVD spec says "No modifications are allowed." for derivedFrom
+  # EnumeratedValues elements, so we return a ref to the same enum object.
+  result = some base
 
 proc deriveEnums(dev: var SvdDevice) =
   var enumIndex = newTable[string, seq[SvdFieldEnum]]()

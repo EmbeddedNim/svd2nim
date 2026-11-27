@@ -84,17 +84,25 @@ func buildTypeMap*(ctx: var CodeGenContext) =
 func intname*(size: Natural): string =
   "uint" & $size
 
-func getEnumTypeName*(enm: SvdFieldEnum, fieldName: string, regType: string): string =
+func getEnumTypeName*(field: SvdField, regType: string): string =
+  assert field.enumValues.isSome
+  let enm = field.enumValues.get
   if enm.headerEnumName.isSome:
     enm.headerEnumName.get
   else:
-    appendTypeName(regType, fieldName)
+    # Derived enums reuse their base enum object, whose id still points at the
+    # base field. Use that field name so the derived field shares the base
+    # enum type name.
+    let idParts = enm.id.split
+    assert idParts.len >= 2 # Enum should always have a parent field at least
+    let name = idParts[^2]
+    appendTypeName(regType, name)
 
 func getRegValueType*(reg: SvdRegisterTreeNode, typeName: string): string =
   assert reg.kind == rnkRegister
   if reg.hasFields:
     typeName.appendTypeName("Fields")
   elif reg.hasSingletonField and reg.fields[0].enumValues.isSome:
-    getEnumTypeName(reg.fields[0].enumValues.get, reg.fields[0].name, typeName)
+    getEnumTypeName(reg.fields[0], typeName)
   else:
     intname reg.resolvedProperties.size

@@ -49,7 +49,7 @@ type CodeGenContext* = object
   output*: Stream
   fieldEnums*: OrderedTable[SvdId, CodeGenEnumDef]
 
-proc AccessorKind* = enum
+type AccessorKind* = enum
   akGetter
   akSetter
 

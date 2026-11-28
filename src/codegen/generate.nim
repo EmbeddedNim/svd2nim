@@ -131,8 +131,9 @@ func getEnumPrefix(enmDef: CodeGenEnumDef): string =
       "x"
 
 proc createEnum*(
-    ctx: var CodeGenContext, reg: SvdRegister, field: SvdField, svdEnum: SvdEnum
+    ctx: var CodeGenContext, reg: SvdRegisterTreeNode, field: SvdField, svdEnum: SvdFieldEnum
   ): CodeGenEnumDef =
+  assert reg.kind == rnkRegister
 
   # Result memoized through context
   if svdEnum.id in ctx.fieldEnums:
@@ -191,7 +192,7 @@ proc createFieldEnums*(
       regset.incl typeName
 
     for field in reg.fields:
-      for enumOpt in [field.enumValues, field.writeEnumValues]
+      for enumOpt in [field.enumValues, field.writeEnumValues]:
         if not enumOpt.isSome:
           continue
         let svdEnum = enumOpt.get
@@ -223,8 +224,8 @@ func getFieldType(field: SvdField, regTypeName, implType: string, access: Access
   # Type of a field is either a bool (if 1-bit length), an Enum type if
   # one is defined, otherwise a plain uint.
   let enumOpt = case access:
-    of akRead: field.getReadEnum()
-    of akWrite: field.getWriteEnum()
+    of akGetter: field.getReadEnum()
+    of akSetter: field.getWriteEnum()
 
   if enumOpt.isSome:
     getEnumTypeName(enumOpt.get, regTypeName)
@@ -265,7 +266,7 @@ func createBitfieldAccessors*(
       if access.isReadable:
         let
           hasReadEnum = field.getReadEnum.isSome
-          readValType = getFieldType(field, regTypeName, implType, akRead)
+          readValType = getFieldType(field, regTypeName, implType, akGetter)
           getterValType =
             if hasReadEnum:
               fmt"UncheckedEnum[{readValType}]"
@@ -289,7 +290,7 @@ func createBitfieldAccessors*(
         result[fmt"{getter.name}[{regValueType}]"] = getter
 
       if access.isWritable:
-        let writeValType = getFieldType(field, regTypeName, implType, akWrite)
+        let writeValType = getFieldType(field, regTypeName, implType, akSetter)
 
         var setter = CodeGenProcDef(
           keyword: "proc",
@@ -328,7 +329,7 @@ proc getFieldDefaultVal(
     enumOpt = field.getWriteEnum()
 
   result =
-    if enumOpt:
+    if enumOpt.isSome:
       let enumObj = ctx.createEnum(reg, field, enumOpt.get)
       var val = enumObj.fields[0].key
       for (k, v) in enumObj.fields:
@@ -363,7 +364,7 @@ proc createFieldsWriter(
     # TODO: prevent duplication of arguments?
     let
       argName = field.name.sanitizeIdent
-      argValType = getFieldType(field, regTypeName, implType)
+      argValType = getFieldType(field, regTypeName, implType, akSetter)
       valconv =
         if argValType != implType:
           "." & implType

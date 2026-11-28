@@ -96,7 +96,7 @@ iterator findAllDirect(n: XmlNode, tag: string): XmlNode =
     if cld.tag == tag:
       yield cld
 
-func parseFieldEnum(eNode: XmlNode, parentId: SvdId): SvdFieldEnum =
+proc parseFieldEnum(eNode: XmlNode, parentId: SvdId): SvdFieldEnum =
   assert eNode.tag == "enumeratedValues"
   new result
   result.name = eNode.getChildTextOpt("name")
@@ -105,10 +105,10 @@ func parseFieldEnum(eNode: XmlNode, parentId: SvdId): SvdFieldEnum =
 
   let usageNode = eNode.child("usage")
   result.usage = block:
-    if usnageNode.isNil:
+    if usageNode.isNil:
       euReadWrite
     else:
-      let usageText = usage.innerText.toLower.strip
+      let usageText = usageNode.innerText.toLower.strip
       case usageText
       of "read": euRead
       of "write":euWrite

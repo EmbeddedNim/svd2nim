@@ -22,7 +22,7 @@ type SvdFieldEnum* = ref object
   name*: Option[string]
   derivedFrom*: Option[string]
   headerEnumName*: Option[string]
-  usage: SvdFieldEnumUsage
+  usage*: SvdFieldEnumUsage
   values*: seq[tuple[name: string, val: int]]
 
 type SvdDimElementGroup* = object
@@ -282,16 +282,16 @@ func hasSingletonField*(reg: SvdRegisterTreeNode): bool =
 
 func getWriteEnum*(field: SvdField): Option[SvdFieldEnum] =
   ## Returns the Enum object used for writing to the field, if defined.
-  if field.enumValues.isSome and field.enumValues.usage in {euWrite, euReadWrite}:
+  if field.enumValues.isSome and field.enumValues.get.usage in {euWrite, euReadWrite}:
     field.enumValues
-  elif field.writeEnum.isSome:
+  elif field.writeEnumValues.isSome:
     field.writeEnumValues
   else:
     none(SvdFieldEnum)
 
 func getReadEnum*(field: SvdField): Option[SvdFieldEnum] =
   ## Returns the Enum object used for reading to the field, if defined.
-  if field.enumValues.isSome and field.enumValues.usage in {euRead, euReadWrite}:
+  if field.enumValues.isSome and field.enumValues.get.usage in {euRead, euReadWrite}:
     field.enumValues
   else:
     none(SvdFieldEnum)

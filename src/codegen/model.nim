@@ -49,6 +49,10 @@ type CodeGenContext* = object
   output*: Stream
   fieldEnums*: OrderedTable[SvdId, CodeGenEnumDef]
 
+proc AccessorKind* = enum
+  akGetter
+  akSetter
+
 proc initCodeGenContext*(
     dev: SvdDevice,
     ignoreAppend: bool = false,

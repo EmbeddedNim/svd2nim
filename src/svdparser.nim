@@ -103,25 +103,36 @@ func parseFieldEnum(eNode: XmlNode, parentId: SvdId): SvdFieldEnum =
   result.derivedFrom = eNode.attrOpt("derivedFrom")
   result.headerEnumName = eNode.getChildTextOpt("headerEnumName")
 
-  let usage = eNode.child("usage")
+  let usageNode = eNode.child("usage")
+  result.usage = block:
+    if usnageNode.isNil:
+      euReadWrite
+    else:
+      let usageText = usage.innerText.toLower.strip
+      case usageText
+      of "read": euRead
+      of "write":euWrite
+      of "read-write": euReadWrite
+      else:
+        warn fmt"Invalid usage property {usageText} in child enumeratedValues element of {parentId}, defaulting to read-write."
+        euReadWrite
+
   result.id =
     if isSome(result.name) and result.name.get.len > 0:
       parentId / result.name.get
     else:
       let defaultName =
-        if usage.isNil:
-          "enum"
-        else:
-          case usage.innerText.toLower.strip
-          of "read": "readEnum"
-          of "write": "writeEnum"
-          else: "enum"
+        case result.usage
+        of euRead: "readEnum"
+        of euWrite: "writeEnum"
+        of euReadWrite: "enum"
       parentId / defaultName
 
   for enumValueNode in eNode.findAllDirect("enumeratedValue"):
     let valueNode = enumValueNode.child("value")
     if isNil(valueNode):
       # Support for isDefault not implementented, ignore
+      # TODO: Implement support for isDefault
       continue
     let
       name = enumValueNode.getChildTextExc("name")

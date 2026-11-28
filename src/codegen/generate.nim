@@ -131,21 +131,21 @@ func getEnumPrefix(enmDef: CodeGenEnumDef): string =
       "x"
 
 proc createEnum*(
-    ctx: var CodeGenContext, field: SvdField, regType: string, size: Natural = 0,
-    useWriteEnum: bool = false
-): CodeGenEnumDef =
+    ctx: var CodeGenContext, reg: SvdRegister, field: SvdField, svdEnum: SvdEnum
+  ): CodeGenEnumDef =
+
   # Result memoized through context
-  let svdEnum =
-    if useWriteEnum and field.writeEnumValues.isSome:
-      field.writeEnumValues.get
-    else:
-      field.enumValues.get
   if svdEnum.id in ctx.fieldEnums:
     return ctx.fieldEnums[svdEnum.id]
 
-  var needsPrefix = false
+  let
+    regType = ctx.typeMap[reg.id]
+    size = reg.resolvedProperties.size div 8 # bytes
+
   result.public = true
-  result.name = getEnumTypeName(field, regType)
+  result.name = getEnumTypeName(svdEnum, regType)
+
+  var needsPrefix = false
   for (k, v) in svdEnum.values:
     let cgKey = k.sanitizeIdent
     result.fields.add (cgKey, v)
@@ -168,7 +168,7 @@ proc createEnum*(
   # Size pragma is used for register accessors which use an enum value type.
   # This happens when the register defines a "singleton" field, that is, a
   # single field whose size is equal to the register, and this singleton field
-  # defines enumeratedValues.  Not required in other cases, but it is simpler to
+  # defines enumeratedValues. Not required in other cases, but it is simpler to
   # just always generate it.
   if size > 0:
     result.pragma = fmt"size: {size}"
@@ -191,22 +191,15 @@ proc createFieldEnums*(
       regset.incl typeName
 
     for field in reg.fields:
-      if field.enumValues.isSome:
-        let svdEnum = field.enumValues.get
-        if svdEnum.id notin seenEnums and svdEnum.id notin ctx.fieldEnums:
-          seenEnums.incl svdEnum.id
-          let
-            props = reg.resolvedProperties
-            en = ctx.createEnum(field, typeName, (props.size div 8))
-          result.add en
-      if field.writeEnumValues.isSome:
-        let svdEnum = field.writeEnumValues.get
-        if svdEnum.id notin seenEnums and svdEnum.id notin ctx.fieldEnums:
-          seenEnums.incl svdEnum.id
-          let
-            props = reg.resolvedProperties
-            en = ctx.createEnum(field, typeName, (props.size div 8), useWriteEnum = true)
-          result.add en
+      for enumOpt in [field.enumValues, field.writeEnumValues]
+        if not enumOpt.isSome:
+          continue
+        let svdEnum = enumOpt.get
+        if svdEnum.id in seenEnums:
+          continue
+
+        seenEnums.incl svdEnum.id
+        result.add ctx.createEnum(reg, field, svdEnum)
 
 func createBitfieldTypes*(
     ctx: CodeGenContext, periph: SvdPeripheral
@@ -226,16 +219,15 @@ func createBitfieldTypes*(
           name: fieldTypeName, public: true, basetype: intname props.size
         )
 
-func getFieldType(field: SvdField, regTypeName, implType: string, useWriteEnum: bool = false): string =
+func getFieldType(field: SvdField, regTypeName, implType: string, access: AccessorKind): string =
   # Type of a field is either a bool (if 1-bit length), an Enum type if
   # one is defined, otherwise a plain uint.
-  let hasEnum =
-    if useWriteEnum:
-      field.writeEnumValues.isSome or field.enumValues.isSome
-    else:
-      field.enumValues.isSome
-  if hasEnum:
-    getEnumTypeName(field, regTypeName, useWriteEnum)
+  let enumOpt = case access:
+    of akRead: field.getReadEnum()
+    of akWrite: field.getWriteEnum()
+
+  if enumOpt.isSome:
+    getEnumTypeName(enumOpt.get, regTypeName)
   elif field.bitsize == 1:
     "bool"
   else:
@@ -336,7 +328,7 @@ proc getFieldDefaultVal(
 
   result =
     if field.enumValues.isSome:
-      let enumObj = ctx.createEnum(field, regTypeName)
+      let enumObj = ctx.createEnum(reg, field, field.enumValues.get)
       var val = enumObj.fields[0].key
       for (k, v) in enumObj.fields:
         if v == numVal:

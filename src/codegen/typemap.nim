@@ -84,12 +84,7 @@ func buildTypeMap*(ctx: var CodeGenContext) =
 func intname*(size: Natural): string =
   "uint" & $size
 
-func getEnumTypeName*(field: SvdField, regType: string, useWriteEnum: bool = false): string =
-  let enm =
-    if useWriteEnum and field.writeEnumValues.isSome:
-      field.writeEnumValues.get
-    else:
-      field.enumValues.get
+func getEnumTypeName*(enm: SvdEnum, regType: string): string =
   if enm.headerEnumName.isSome:
     enm.headerEnumName.get
   else:
@@ -106,6 +101,7 @@ func getRegValueType*(reg: SvdRegisterTreeNode, typeName: string): string =
   if reg.hasFields:
     typeName.appendTypeName("Fields")
   elif reg.hasSingletonField and reg.fields[0].enumValues.isSome:
+    # TODO: Need to handle read/write enums here
     getEnumTypeName(reg.fields[0], typeName)
   else:
     intname reg.resolvedProperties.size

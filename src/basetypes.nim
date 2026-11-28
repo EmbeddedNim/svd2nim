@@ -11,12 +11,18 @@ type SvdId* = object
 
 const RootId* = SvdId(parts: @[])
 
+type SvdFieldEnumUsage* = enum
+  euRead
+  euWrite
+  euReadWrite
+
 type SvdFieldEnum* = ref object
   # https://arm-software.github.io/CMSIS_5/SVD/html/elem_registers.html#elem_enumeratedValues
   id*: SvdId
   name*: Option[string]
   derivedFrom*: Option[string]
   headerEnumName*: Option[string]
+  usage: SvdFieldEnumUsage
   values*: seq[tuple[name: string, val: int]]
 
 type SvdDimElementGroup* = object
@@ -271,3 +277,19 @@ func hasSingletonField*(reg: SvdRegisterTreeNode): bool =
   if reg.kind != rnkRegister:
     return false
   result = reg.fields.len == 1 and reg.fields[0].bitsize == reg.resolvedProperties.size
+
+func getWriteEnum*(field: SvdField): Option[SvdFieldEnum] =
+  ## Returns the Enum object used for writing to the field, if defined.
+  if field.enumValues.isSome and field.enumValues.usage in {euWrite, euReadWrite}:
+    field.enumValues
+  elif field.writeEnum.isSome:
+    field.writeEnumValues
+  else:
+    none(SvdFieldEnum)
+
+func getReadEnum*(field: SvdField): Option[SvdFieldEnum] =
+  ## Returns the Enum object used for reading to the field, if defined.
+  if field.enumValues.isSome and field.enumValues.usage in {euRead, euReadWrite}:
+    field.enumValues
+  else:
+    none(SvdFieldEnum)

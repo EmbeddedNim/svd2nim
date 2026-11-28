@@ -210,25 +210,15 @@ proc parseField(fNode: XmlNode, parentId: SvdId): SvdField =
     )
 
   let enumValuesNodes = fNode.findAll("enumeratedValues")
-  result.enumValues = none SvdFieldEnum
-  result.writeEnumValues = none SvdFieldEnum
+  if enumValuesNodes.len > 2:
+    warn fmt"Field '{result.name}' contains more than 2 enumeratedValues elements."
   for node in enumValuesNodes:
     let ev = parseFieldEnum(node, result.id)
-    let usage = node.getChildTextOpt("usage")
-    let isWrite =
-      usage.isSome and usage.get.strip.toLowerAscii == "write"
-    if isWrite:
-      if result.writeEnumValues.isNone:
-        result.writeEnumValues = some ev
+    if ev.usage == euWrite:
+      result.writeEnumValues = some ev
     else:
       # read or read-write (or unspecified): primary/read enum
-      if result.enumValues.isNone:
-        result.enumValues = some ev
-  # Fall back so write-only fields still have a primary enum for codegen.
-  if result.enumValues.isNone and result.writeEnumValues.isSome:
-    result.enumValues = result.writeEnumValues
-  if enumValuesNodes.len > 2:
-    warn fmt"Multiple enumeratedValues in field '{result.name}', only read/write entries will be used"
+      result.enumValues = some ev
 
   result.dimGroup = fNode.parseDimElementGroup()
 
@@ -274,6 +264,7 @@ proc parseRegisterTreeNode(xml: XmlNode, parent: SvdId): SvdRegisterTreeNode =
     if not isNil(fieldsTag):
       for fieldNode in fieldsTag.findAllDirect("field"):
         result.fields.add fieldNode.parseField(result.id)
+    # TODO: Support writeConstraint element as child of Register and Fields
   of rnkCluster:
     result.headerStructName = xml.getChildTextOpt("headerStructName")
     result.registers = xml.parseChildRegisters(result.id)

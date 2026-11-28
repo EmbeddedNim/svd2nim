@@ -248,22 +248,9 @@ func createBitfieldAccessors*(
 
     for field in reg.fields:
       let
-        hasReadEnum = field.enumValues.isSome
-        hasWriteEnum = field.writeEnumValues.isSome or field.enumValues.isSome
         access = field.access.get(props.access)
         lsb = field.lsb
         msb = field.msb
-        readValType = getFieldType(field, regTypeName, implType)
-        writeValType =
-          if field.writeEnumValues.isSome:
-            getFieldType(field, regTypeName, implType, useWriteEnum = true)
-          else:
-            readValType
-        getterValType =
-          if hasReadEnum:
-            fmt"UncheckedEnum[{readValType}]"
-          else:
-            readValType
 
       let getterName = block:
         var n = field.name.sanitizeIdent
@@ -276,6 +263,15 @@ func createBitfieldAccessors*(
         n
 
       if access.isReadable:
+        let
+          hasReadEnum = field.getReadEnum.isSome
+          readValType = getFieldType(field, regTypeName, implType, akRead)
+          getterValType =
+            if hasReadEnum:
+              fmt"UncheckedEnum[{readValType}]"
+            else:
+              readValType
+
         var getter = CodeGenProcDef(
           keyword: "func",
           name: getterName,
@@ -293,6 +289,8 @@ func createBitfieldAccessors*(
         result[fmt"{getter.name}[{regValueType}]"] = getter
 
       if access.isWritable:
+        let writeValType = getFieldType(field, regTypeName, implType, akWrite)
+
         var setter = CodeGenProcDef(
           keyword: "proc",
           name: fmt"`{getterName}=`",
@@ -319,16 +317,19 @@ func createBitfieldAccessors*(
 proc getFieldDefaultVal(
     ctx: var CodeGenContext, reg: SvdRegisterTreeNode, field: SvdField
 ): string =
+  ## Get default value for writing to a field
+
   assert reg.kind == rnkRegister
 
   let
     fslice = field.lsb.int .. field.msb.int
     numVal = reg.resolvedProperties.resetValue.bitsliced(fslice)
     regTypeName = ctx.typeMap[reg.id]
+    enumOpt = field.getWriteEnum()
 
   result =
-    if field.enumValues.isSome:
-      let enumObj = ctx.createEnum(reg, field, field.enumValues.get)
+    if enumOpt:
+      let enumObj = ctx.createEnum(reg, field, enumOpt.get)
       var val = enumObj.fields[0].key
       for (k, v) in enumObj.fields:
         if v == numVal:

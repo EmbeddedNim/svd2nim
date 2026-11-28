@@ -47,6 +47,8 @@ type SvdField* = ref object
   description*: Option[string]
   lsb*: Natural
   msb*: Natural
+  # enumValues holds either the read-write usage enum (default) or read-only enum.
+  # writeEnumValues holds the write-only usage enum if defined.
   enumValues*: Option[SvdFieldEnum]
   writeEnumValues*: Option[SvdFieldEnum]
   dimGroup*: SvdDimElementGroup

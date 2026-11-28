@@ -5,6 +5,9 @@ import std/streams
 
 import ../basetypes
 
+export tables
+export sets
+
 type TypeDefField* = object
   name*: string
   public*: bool

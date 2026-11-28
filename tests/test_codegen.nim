@@ -101,13 +101,19 @@ suite "Misc codegen tests":
       parseDimIndices(3, some("2,3,4")) == @["2", "3", "4"]
 
   test "conflicting enum values are prefixed":
+    var reg = SvdRegisterTreeNode(
+      kind: rnkRegister, name: "R", id: "T.R".toSvdId,
+      resolvedProperties: ResolvedRegProperties(size: 32, access: raReadWrite, resetValue: 0)
+    )
     var ctx = initCodeGenContext(dev)
     ctx.symbols.incl nimIdentKey("FLASH")
 
     var field = SvdField(
       name: "X", enumValues: some SvdFieldEnum(id: "T.X".toSvdId, values: @[("Flash", 0), ("Other", 1)])
     )
-    let cg = ctx.createEnum(field, "T")
+    ctx.typeMap[reg.id] = "T"
+    ctx.typeMap[field.enumValues.get.id] = "T_X_Type"
+    let cg = ctx.createEnum(reg, field, field.enumValues.get)
     check:
       cg.fields[0].key != "Flash"
 
@@ -138,18 +144,18 @@ suite "Derived enum codegen":
       enums.findByName("GPIOK_MODER_MODER1").isNone
       enums.findByName("GPIOK_MODER_MODER15").isNone
 
-  test "getEnumTypeName uses base field name":
+  test "buildEnumTypeName uses base field name":
     var field = SvdField(
       name: "MODER1",
       enumValues: some SvdFieldEnum(id: "GPIOK.MODER.MODER0.MODER0".toSvdId)
     )
     check:
-      getEnumTypeName(field, "GPIOK_MODER_Type") == "GPIOK_MODER_MODER0"
+      ctx.buildEnumTypeName(field.enumValues.get, "GPIOK_MODER_Type") == "GPIOK_MODER_MODER0"
 
-  test "getEnumTypeName honors headerEnumName":
+  test "buildEnumTypeName honors headerEnumName":
     var field = SvdField(
       name: "X",
       enumValues: some SvdFieldEnum(id: "R.X".toSvdId, headerEnumName: some "CustomEnum")
     )
     check:
-      getEnumTypeName(field, "R_Type") == "CustomEnum"
+      ctx.buildEnumTypeName(field.enumValues.get, "R_Type") == "CustomEnum"

@@ -225,6 +225,11 @@ iterator walkRegistersOnly*(p: SvdPeripheral): SvdRegisterTreeNode =
     if n.kind == rnkRegister:
       yield n
 
+iterator walkRegistersOnly*(dev: SvdDevice): SvdRegisterTreeNode =
+  for p in dev.peripherals.values:
+    for reg in p.walkRegistersOnly:
+      yield reg
+
 proc isWritable*(access: SvdRegisterAccess): bool =
   access in {raWriteOnce, raReadWrite, raWriteOnly, raReadWriteOnce}
 

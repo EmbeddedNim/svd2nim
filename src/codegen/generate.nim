@@ -144,7 +144,7 @@ proc createEnum*(
     size = reg.resolvedProperties.size div 8 # bytes
 
   result.public = true
-  result.name = getEnumTypeName(svdEnum, regType)
+  result.name = ctx.typeMap[svdEnum.id]
 
   var needsPrefix = false
   for (k, v) in svdEnum.values:
@@ -214,13 +214,13 @@ func createBitfieldTypes*(
       continue
 
     for field in reg.fields:
-      let fieldTypeName = getRegValueType(reg, regTypeName)
+      let fieldTypeName = ctx.getRegValueType(reg)
       if fieldTypeName notin result:
         result[fieldTypeName] = CodeGenDistinctDef(
           name: fieldTypeName, public: true, basetype: intname props.size
         )
 
-func getFieldType(field: SvdField, regTypeName, implType: string, access: AccessorKind): string =
+func getFieldType(ctx: CodeGenContext, field: SvdField, regTypeName, implType: string, access: AccessorKind): string =
   # Type of a field is either a bool (if 1-bit length), an Enum type if
   # one is defined, otherwise a plain uint.
   let enumOpt = case access:
@@ -228,7 +228,7 @@ func getFieldType(field: SvdField, regTypeName, implType: string, access: Access
     of akSetter: field.getWriteEnum()
 
   if enumOpt.isSome:
-    getEnumTypeName(enumOpt.get, regTypeName)
+    ctx.typeMap[enumOpt.get.id]
   elif field.bitsize == 1:
     "bool"
   else:
@@ -242,7 +242,7 @@ func createBitfieldAccessors*(
       props = reg.resolvedProperties
       regTypeName = ctx.typeMap[reg.id]
       implType = intname props.size
-      regValueType = getRegValueType(reg, regTypeName)
+      regValueType = ctx.getRegValueType(reg)
 
     if not reg.hasFields:
       continue
@@ -266,7 +266,7 @@ func createBitfieldAccessors*(
       if access.isReadable:
         let
           hasReadEnum = field.getReadEnum.isSome
-          readValType = getFieldType(field, regTypeName, implType, akGetter)
+          readValType = ctx.getFieldType(field, regTypeName, implType, akGetter)
           getterValType =
             if hasReadEnum:
               fmt"UncheckedEnum[{readValType}]"
@@ -290,7 +290,7 @@ func createBitfieldAccessors*(
         result[fmt"{getter.name}[{regValueType}]"] = getter
 
       if access.isWritable:
-        let writeValType = getFieldType(field, regTypeName, implType, akSetter)
+        let writeValType = ctx.getFieldType(field, regTypeName, implType, akSetter)
 
         var setter = CodeGenProcDef(
           keyword: "proc",
@@ -354,7 +354,7 @@ proc createFieldsWriter(
   let
     implType = intname reg.resolvedProperties.size
     regTypeName = ctx.typeMap[reg.id]
-    valType = getRegValueType(reg, regTypeName)
+    valType = ctx.getRegValueType(reg)
 
   result = CodeGenProcDef(keyword: "proc", name: "write", public: true)
   result.args.add ("reg", regTypeName)
@@ -364,7 +364,7 @@ proc createFieldsWriter(
     # TODO: prevent duplication of arguments?
     let
       argName = field.name.sanitizeIdent
-      argValType = getFieldType(field, regTypeName, implType, akSetter)
+      argValType = ctx.getFieldType(field, regTypeName, implType, akSetter)
       valconv =
         if argValType != implType:
           "." & implType
@@ -388,7 +388,7 @@ proc createAccessors*(
     let
       props = reg.resolvedProperties
       regTypeName = ctx.typeMap[reg.id]
-      valType = getRegValueType(reg, regTypeName)
+      valType = ctx.getRegValueType(reg)
 
     if props.access.isReadable:
       # Create regular read accessor
